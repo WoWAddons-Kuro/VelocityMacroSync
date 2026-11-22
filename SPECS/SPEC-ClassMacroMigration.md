@@ -10,15 +10,14 @@
 - [ ] Classifier: identify general macros that belong to one class
 - [ ] Migration on the current character (create, re-place bars, stub)
 - [ ] Login remap sweep on other characters of the class
-- [ ] Stub purge command
 
 ## Overview
 
 VelocityClassMacroSync keeps the character-specific macro tab identical across all characters of the same class. This spec covers one feature of it: automatically moving macros that contain class-specific spells out of the **General** tab and into the character tab, where the class sync then carries them to every character of that class.
 
-The hard constraint is action bars. A general macro is shared by every character on the account, and a bar button holds a reference to the macro, not its text. Deleting a general macro makes the buttons that reference it on other characters silently disappear, with nothing left to identify what was there. So migration never deletes. It converts the general macro into a **stub** in place, which keeps every button reference alive. Each other character of the class swaps its stub buttons for the class macro the next time it logs in.
+The hard constraint is action bars. A general macro is shared by every character on the account, and a bar button holds a reference to the macro, not its text. Deleting a general macro makes the buttons that reference it on other characters silently disappear, with nothing left to identify what was there. So migration never deletes, and nothing else in the addon does either (product rule 1). It converts the general macro into a **stub** in place by renaming it and rewriting its body with `EditMacro`, which keeps every button reference alive. Each other character of the class swaps its stub buttons for the class macro the next time it logs in.
 
-Stubs are renamed so they sort to the end of the General tab, forming a block of migrated records that can be purged later.
+Stubs are renamed so they sort to the end of the General tab, forming a block of migrated records. They are permanent; the addon has no delete path.
 
 ## Design
 
@@ -174,11 +173,11 @@ The sweep is idempotent: once a slot is remapped it no longer holds a stub, so r
 
 If the class macro cannot be resolved (deleted from the class store, or not yet synced), the slot is left on the stub and a message is printed.
 
-### Stub Purge
+### Stubs Are Permanent
 
-Stubs stay until removed. A slash command deletes every general macro that matches the stub name pattern and carries the marker line.
+The addon never deletes a macro, so stubs stay in the General tab. They sort to the end as a `zz###` block and are inert (a comment-only body does nothing when pressed). They are the only thing keeping other characters' bar buttons alive until those characters log in and remap, and there is no way to know from one character whether every other character has done so.
 
-Purging a stub while some character of that class has not yet logged in and remapped clears that character's buttons for it. The command prints how many stubs it will delete and requires confirmation.
+If the user wants the general slots back they delete the stubs by hand, knowing that any character of that class that has not logged in since the migration will lose those buttons.
 
 ### Behavior on Other Characters
 
@@ -214,7 +213,6 @@ SavedVariables are written only at logout or `/reload`.
 | `GetMacroIndexByName(name)` | `0` if not found. |
 | `CreateMacro(name, icon, body, perCharacter)` | Returns the new index. Blocked in combat. |
 | `EditMacro(indexOrName, name, icon, body)` | Edits in place; returns the new index after re-sort. Blocked in combat. |
-| `DeleteMacro(indexOrName)` | Used only by the purge command. Blocked in combat. |
 | `GetActionInfo(slot)` | Returns `actionType, id, subType`. `actionType == "macro"` for macro buttons. |
 | `GetActionText(slot)` | Macro name for macro buttons. |
 | `PickupMacro(indexOrName)`, `PlaceAction(slot)`, `ClearCursor()` | Place a macro into a slot. `PlaceAction` is blocked in combat. |
@@ -257,7 +255,6 @@ To confirm on each client before relying on it:
 
 ## Open Questions
 
-- **Automatic stub purge.** The addon could keep a roster of characters it has seen and delete a stub once every seen character of that class has remapped. A character that predates the addon and has not logged in since would lose its buttons for that macro. Manual purge only, or add the roster gate?
 - **Items in class macros.** A macro that casts a class spell and also uses a trinket or consumable is currently left in General because the item name is unrecognized. Should `/use` item names be ignored by the classifier instead of blocking?
 - **Migration during play.** Migration runs at login. Should it also run when a general macro is created or edited mid-session, or would moving a macro the player just saved be surprising?
 - **Stub feedback.** The stub body is a comment only, so pressing an un-remapped button does nothing. Add a second line that prints where the macro went?
@@ -266,5 +263,6 @@ To confirm on each client before relying on it:
 ## Alternatives Considered
 
 - **Delete the general macro after migrating.** Simplest, and frees the general slot immediately. Not chosen because buttons on other characters disappear with no trace, so they cannot be remapped.
+- **A purge command to delete stubs later.** Considered and rejected: a stub is a user macro that has been renamed and rewritten, and the addon never deletes a user macro (product rule 1). Deleting a stub would also empty the buttons of any character of that class that has not yet logged in and remapped, which is the exact failure the stub exists to prevent. Stubs stay in the General tab; the user can delete them by hand if they want the slot back.
 - **Keep the general macro's name and replace only the body.** Keeps the button label unchanged. Not chosen because the stub and the class macro would share a name, making name-based lookup ambiguous, and stubs would stay scattered through the General tab instead of collecting at the end.
 - **Per-character slot map.** Record which slots hold which macros for every character, then restore placements after a delete. It would allow immediate deletion, but needs continuous bar tracking and still fails for characters the addon has never seen. The stub carries the same information with no extra state.
