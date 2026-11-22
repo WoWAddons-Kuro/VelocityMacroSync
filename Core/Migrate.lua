@@ -139,6 +139,11 @@ function Migrate.One(generalIndex, opts)
 	local ok = Macros.Edit(liveIndex, stubName, Migrate.STUB_ICON, Migrate.StubBody(myClass, NS.MacroKey(body), name))
 	if not ok then return false, "EditMacro failed converting to stub" end
 
+	-- We just wrote to the character page. Bring the class set in line NOW,
+	-- synchronously, rather than hoping an UPDATE_MACROS (which our own guard
+	-- swallows) gets around to it.
+	if NS.Sync and NS.Sync.Reconcile then NS.Sync.Reconcile("migrate") end
+
 	NS.Print(string.format("Moved \"%s\" to your %s macros%s; %d bar button%s updated. General copy is now stub %s.",
 		name, (UnitClass("player")) or myClass,
 		classNameOrErr ~= name and (" as \"" .. classNameOrErr .. "\"") or "",

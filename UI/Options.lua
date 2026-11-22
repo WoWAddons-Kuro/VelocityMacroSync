@@ -302,6 +302,9 @@ local function CreateOptions()
 
 	local function Refresh()
 		if not NS.db then return end
+		-- The page is the source of truth; make sure db.classes reflects it
+		-- before drawing, so the tables never show a stale store.
+		if NS.Sync and NS.Sync.Reconcile and not InCombatLockdown() then NS.Sync.Reconcile("options") end
 		RefreshClassTable()
 		RefreshMigrationTable()
 		local topY, bottom = content:GetTop(), danger:GetBottom()

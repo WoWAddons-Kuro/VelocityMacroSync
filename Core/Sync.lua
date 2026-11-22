@@ -164,9 +164,18 @@ local postLoginDone = false
 local function PostLogin()
 	if postLoginDone or not synced or not NS.Migrate then return end
 	postLoginDone = true
-	NS.Migrate.Auto()
+	NS.Migrate.Auto()      -- each One() it runs calls Sync.Reconcile() itself
 	NS.Migrate.Remap()
 	if NS.OptionsRefresh then NS.OptionsRefresh() end
+end
+
+-- THE single entry point for "the character page changed, bring the store in
+-- line". Anything in this addon that writes a macro to the page calls this
+-- afterwards, synchronously, instead of relying on UPDATE_MACROS (which the
+-- `applying` guard deliberately ignores for our own writes). The page is the
+-- source of truth for what exists; db.classes is derived from it by Merge.
+function Sync.Reconcile(reason)
+	return Sync.Run(reason or "reconcile")
 end
 
 frame:SetScript("OnEvent", function(_, event)
