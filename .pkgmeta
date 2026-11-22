@@ -1,0 +1,11 @@
+package-as: VelocityClassMacroSync
+
+ignore:
+  - README.md
+  - SPEC.md
+  - .github
+  - .gitignore
+  - .pkgmeta
+
+  - tests
+
