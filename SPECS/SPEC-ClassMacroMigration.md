@@ -104,7 +104,10 @@ want moved. This also makes the bar scan the source of truth for the re-place st
 
 For each general macro referenced by at least one of this character's action slots and not already a stub:
 
-1. Extract spell names from `/cast`, `/use`, `/castsequence`, `#showtooltip` and `#show` lines.
+1. Extract spell names from `/cast`, `/castsequence`, `#showtooltip` and `#show` lines. **`/use` lines are
+   ignored** (they are the item command: `/use Trinket`, `/use 13`, `/use Healing Potion`; items are not in
+   any spellbook). A macro with only `/use` lines therefore has no spell names and stays in General — the
+   player can move it to a character macro by hand if they want it on one class.
 2. Strip `[conditionals]`, `reset=` clauses, rank suffixes and leading `!`; split on `;` and (for `/castsequence`) `,`.
 3. Look each name up in the class spell sets.
 
@@ -115,7 +118,7 @@ A macro is migrated only when **all** of the following hold:
   consumable macros stay in General. This is the rule that makes the "different class" case impossible:
   a migrated macro always contains a spell only its class can have.
 - No name is recognized as a spell of a different class.
-- No name is unrecognized. (Item names in `/use` lines are unrecognized by this definition, so macros that mix class spells with trinkets or consumables are left alone. See Open Questions.)
+- No name is unrecognized (a spell no character of yours has learned yet blocks until one does).
 
 Macros that fail any rule are left untouched in the General tab.
 
@@ -246,6 +249,46 @@ Everything flavour-specific lives in the per-client files; `Core\*` never branch
 wrappers already there. Pure logic (`Classify`, stub format, remap decision) is flavour-free and testable
 under `tests\run.lua` with the fake API extended for action slots and a spellbook.
 
+### Settings page
+
+The page (`UI\Options.lua`) grows from two cards to four, top to bottom:
+
+1. **Top card** — icon, title, description (exists).
+2. **Class Macros: `<class>`** (exists; list becomes a table) — `Open Macro Window` button, summary line, then a
+   **two-column table**: macro name | body. Body is multi-line, so rows are variable height: each row is a
+   frame with two FontStrings, the row height is `max(name height, body height) + padding`, rows stack with
+   `SetPoint("TOPLEFT", prevRow, "BOTTOMLEFT")`. Rebuilt on every `Refresh`. Body text is shown verbatim
+   (monospace not required; GameFontHighlightSmall, left-justified, word-wrap on).
+3. **General Macro Migration** (new) —
+   - `[ ] Enable automatic migration of class-specific macros` → `db.autoMigrate` (default **off**).
+     **Turning it on requires a confirmation dialog.** Clicking the unchecked box does *not* set the value;
+     it reverts the checkbox to unchecked and opens a `StaticPopup` that repeats the warning below in full
+     with buttons `Enable migration` / `Cancel`. Only `Enable migration` sets `db.autoMigrate = true` and
+     re-ticks the box. Turning it **off** is immediate, no dialog. The popup has `showAlert = true`
+     (the red exclamation art) so it reads as a warning, not an info box.
+   - Warning text, always visible, red:
+     > WARNING: This will *move* your class-specific macros from General into per-character macros for each
+     > class. Make sure you are happy with this addon before you turn this on, because characters referencing
+     > general macros will only be updated if this addon is still running when you first login to them.
+   - A **dense table** of every General-tab macro (stubs excluded): name | detected class | `Migrate` button.
+     Detected class is the classifier's verdict with the current spell sets: a class token coloured with
+     `RAID_CLASS_COLORS`, or grey `—` with a reason in a tooltip (`no class spell`, `unknown: Frostfire Bolt`,
+     `#nosync`, `mixed: MAGE, WARRIOR`). The `Migrate` button is enabled only when the verdict is the
+     **logged-in character's class** (migration creates a character macro, which can only happen on a
+     character of that class) and the macro is not `#nosync`. Clicking migrates that one macro through the
+     same `Core/Migrate.lua` path as auto-migration, then refreshes the table.
+   - The per-macro button is **not** gated by `autoMigrate` and **not** gated by bar placement: it is the
+     player's explicit choice. Auto-migration keeps both gates.
+4. **Reset** (exists).
+
+`db.autoMigrate` is read by `Core/Migrate.lua` at the login hook; when false the bar scan does not run.
+
+### Saved Data (additions)
+
+```lua
+VelocityMacroSyncDB.autoMigrate = false
+```
+
 ## API Surface
 
 | Function | Notes |
@@ -298,7 +341,7 @@ To confirm on each client before relying on it:
 
 ## Open Questions
 
-- **Items in class macros.** `/use` is the macro command for items (`/use Trinket`, `/use 13`, `/use Healing Potion`). Item names are not in any spellbook, so they are "unrecognized" and block migration: a "Charge + trinket" macro stays in General. Decision pending: keep blocking (safe) or ignore `/use` lines (migrates more, risk is nil since the class spell still has to be present).
+- ~~Items in class macros~~ Decided 2026-11-22: `/use` lines are ignored by the classifier (see Classifier).
 - **Migration during play.** Migration runs at login. Should it also run when a general macro is created or edited mid-session, or would moving a macro the player just saved be surprising?
 - **Stub feedback.** The stub body is a comment only, so pressing an un-remapped button does nothing. Add a second line that prints where the macro went?
 
