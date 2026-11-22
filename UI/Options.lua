@@ -83,7 +83,7 @@ local function CreateOptions()
 	sub:SetText("Keeps the Character Specific Macros tab identical across every character of the same class. " ..
 		"Adds, edits and deletes you make on one character reach the others at their next login; edits are applied " ..
 		"in place so macros stay on your action bars. Same-name clashes on first sync are kept as Name~2. " ..
-		"Commands: /cms status, sync, list, reset, resetclass.")
+		"Commands: /velocitymacrosync status, sync, list, reset, resetclass.")
 	top:SetHeight(PAD + title:GetStringHeight() + 6 + sub:GetStringHeight() + PAD)
 
 	-- Class card.

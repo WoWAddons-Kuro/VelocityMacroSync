@@ -76,20 +76,18 @@ function NS.ConfirmWipe() StaticPopup_Show("VELOCITYMACROSYNC_WIPE") end
 
 local function Help()
 	NS.Print("Velocity Macro Sync commands:")
-	NS.Print("  /cms status      - what this character and its class set hold")
-	NS.Print("  /cms sync        - run the merge now")
-	NS.Print("  /cms list        - list the class set")
-	NS.Print("  /cms resetchar   - forget this character's sync state; next sync pulls the whole class set")
-	NS.Print("  /cms resetclass  - clear this class's shared set; every character re-shares at next login")
-	NS.Print("  /cms reset       - DELETE ALL saved data for every class and character (asks first)")
-	NS.Print("  /cms debug       - toggle debug output")
+	NS.Print("  /velocitymacrosync status      - what this character and its class set hold")
+	NS.Print("  /velocitymacrosync sync        - run the merge now")
+	NS.Print("  /velocitymacrosync list        - list the class set")
+	NS.Print("  /velocitymacrosync resetchar   - forget this character's sync state; next sync pulls the whole class set")
+	NS.Print("  /velocitymacrosync resetclass  - clear this class's shared set; every character re-shares at next login")
+	NS.Print("  /velocitymacrosync reset       - DELETE ALL saved data for every class and character (asks first)")
+	NS.Print("  /velocitymacrosync debug       - toggle debug output")
 	NS.Print("No command ever removes a macro from a character's macro page.")
 end
 
-SLASH_CLASSMACROSYNC1 = "/cms"
-SLASH_CLASSMACROSYNC2 = "/velocitymacrosync"
-SLASH_CLASSMACROSYNC3 = "/classmacrosync"
-SlashCmdList.CLASSMACROSYNC = function(msg)
+SLASH_VELOCITYMACROSYNC1 = "/velocitymacrosync"
+SlashCmdList.VELOCITYMACROSYNC = function(msg)
 	local cmd = (msg or ""):lower():match("^%s*(%S*)")
 	if cmd == "status" or cmd == "" then
 		NS.Sync.Status()

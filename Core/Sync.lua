@@ -198,7 +198,7 @@ function Sync.ResetCharacter()
 	rec.snapshot = nil
 	rec.excluded = {}
 	synced = false
-	NS.Print("this character will pull every macro in the class set on the next sync (/cms sync)")
+	NS.Print("this character will pull every macro in the class set on the next sync (/velocitymacrosync sync)")
 end
 
 -- Wipe the class set record (the ONLY place the set shrinks, and only by explicit command).

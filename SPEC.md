@@ -1,6 +1,6 @@
 # Velocity Macro Sync (VelocityMacroSync) — SPEC
 
-Folder / TOC / SavedVariables name: `VelocityMacroSync`. Display title: **Velocity Macro Sync**. Slash: `/cms`, `/classmacrosync`.
+Folder / TOC / SavedVariables name: `VelocityMacroSync`. Display title: **Velocity Macro Sync**. Slash: `/velocitymacrosync` (only).
 
 ## Goal
 
@@ -12,10 +12,10 @@ character appear on the others at their next login. No library dependencies.
 
 1. **The addon NEVER deletes a macro from a character's page.** Only the player does. There is no
    `DeleteMacro` wrapper anywhere in the code; the test harness makes `DeleteMacro` a hard error.
-2. **The class set is append-only.** Nothing is ever removed from it except by `/cms resetclass`.
+2. **The class set is append-only.** Nothing is ever removed from it except by `/velocitymacrosync resetclass`.
 3. **A player deletion becomes a per-character TOMBSTONE** ("not on this character's page by choice").
    The macro stays in the class set and still syncs to every other character. It is never recreated
-   on the character that tombstoned it, unless that character runs `/cms reset`.
+   on the character that tombstoned it, unless that character runs `/velocitymacrosync reset`.
 4. **The addon NEVER renames a macro to dodge a collision.** There is no `Name~2` path. A macro's
    identity is the **content hash of its body**; name and icon are attributes reconciled in place. Same body
    on two characters is the same macro, whatever either calls it. (Set 2026-11-22 after `charge~2`, `~3`, `~4`…)
@@ -77,7 +77,7 @@ No delete list and no rename-to-avoid-collision exist.
   fit (once per name per session). The class set keeps them all. Decided 2026-11-22.
 - Snapshot is retaken after every apply.
 - Chat: login/manual syncs print plain-English lines with names ("Added 2 Warrior macros from your other
-  characters: Charge, Shout"). In-session edits print nothing unless `/cms debug` is on.
+  characters: Charge, Shout"). In-session edits print nothing unless `/velocitymacrosync debug` is on.
 
 ## Client abstraction (`Client/`)
 
@@ -90,13 +90,13 @@ the interface (Forever display name = `UnitNameUnmodified` name + surname). `Cli
 
 | cmd | effect |
 |---|---|
-| `/cms` / `/cms status` | character, class, slots used, class-set size, snapshot state, sibling characters |
-| `/cms sync` | run the merge now |
-| `/cms list` | names in the class set |
-| `/cms resetchar` | forget this character's snapshot and tombstones → next sync pulls the whole class set |
-| `/cms resetclass` | clear the class-set record and sibling snapshots/tombstones. Pages are untouched; every character re-shares at next login |
-| `/cms reset` (also `/velocitymacrosync reset`) | **confirm dialog**, then delete ALL saved data for every class and character. Pages untouched. Same action as the red "Delete All Saved Data" button at the bottom of the settings page |
-| `/cms debug` | per-action chat trace |
+| `/velocitymacrosync` / `/velocitymacrosync status` | character, class, slots used, class-set size, snapshot state, sibling characters |
+| `/velocitymacrosync sync` | run the merge now |
+| `/velocitymacrosync list` | names in the class set |
+| `/velocitymacrosync resetchar` | forget this character's snapshot and tombstones → next sync pulls the whole class set |
+| `/velocitymacrosync resetclass` | clear the class-set record and sibling snapshots/tombstones. Pages are untouched; every character re-shares at next login |
+| `/velocitymacrosync reset` | **confirm dialog**, then delete ALL saved data for every class and character. Pages untouched. Same action as the red "Delete All Saved Data" button at the bottom of the settings page |
+| `/velocitymacrosync debug` | per-action chat trace |
 
 ## Tests
 

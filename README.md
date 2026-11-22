@@ -14,12 +14,12 @@ third — each change reaches the rest the next time they log in. Nothing to con
 ## Commands
 
 ```
-/cms             status: this character, its class set, sibling characters
-/cms sync        run the merge now
-/cms list        names in the class set
-/cms reset       forget this character's sync state (next login merges as a plain union)
-/cms resetclass  wipe this class's shared set
-/cms debug       toggle per-action trace
+/velocitymacrosync             status: this character, its class set, sibling characters
+/velocitymacrosync sync        run the merge now
+/velocitymacrosync list        names in the class set
+/velocitymacrosync reset       forget this character's sync state (next login merges as a plain union)
+/velocitymacrosync resetclass  wipe this class's shared set
+/velocitymacrosync debug       toggle per-action trace
 ```
 
 ## Notes
