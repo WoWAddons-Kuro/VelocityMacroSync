@@ -1,6 +1,6 @@
 # SPEC-ClassMacroMigration: Automatic General → Class Macro Migration
 
-- **Status:** Draft
+- **Status:** Implemented (M1–M6 code complete, M7 in-game verification pending)
 - **Addon:** VelocityMacroSync
 - **Clients:** Classic Era, WoW Forever (shipped); Retail (client flavour written blind, no TOC until testable)
 - **Product spec:** `00_VelocityMacroSync.md` — its HARD RULES apply here unchanged
@@ -10,12 +10,13 @@ This spec was drafted before the sync core existed and has been adapted to it. W
 code direction in `00_VelocityMacroSync.md` wins: content-hash identity, append-only class set, no delete
 path, per-client files under `Client\`.
 
-- [ ] M1 Client interface additions: `ActionSlots`, `ReadSpellbook` in `Client.lua`; impl in `Client_ClassicEra`, `Client_Forever`, new `Client_Retail`
-- [ ] M2 `Core/SpellSets.lua`: build `db.classSpells[CLASS]` from the spellbook
-- [ ] M3 `Core/Classify.lua`: extract spell names, apply the rules (pure, tested offline)
-- [ ] M4 `Core/Migrate.lua`: bar scan → classify → create class macro → re-place slots → stub
-- [ ] M5 Remap sweep on login, after `Sync.Run`
-- [ ] M6 Per-client verification in game (see [Verification Checklist](#verification-checklist))
+- [x] M1 Client interface additions: `MaxActionSlot`, `ActionSlotMacroName`, `ReadSpellbook` in `Client.lua`; impl in `Client_ClassicEra`, `Client_Forever`, new `Client_Retail` (2e78110)
+- [x] M2 `Core/SpellSets.lua`: build `db.classSpells[CLASS]` from the spellbook (519b491)
+- [x] M3 `Core/Classify.lua`: extract spell names, apply the rules (pure, 34 tests) (7b6c016)
+- [x] M4 `Core/Migrate.lua`: bar scan → classify → create class macro → re-place slots → stub (39 tests) (2df737a)
+- [x] M5 Remap sweep on login, after `Sync.Run` (16 tests) (fee080d)
+- [x] M6 Settings page: class-macro table, migration section with confirm-on-enable and two-group table
+- [ ] M7 Per-client verification in game (see [Verification Checklist](#verification-checklist))
 
 ## Overview
 
