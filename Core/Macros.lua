@@ -1,4 +1,4 @@
--- Class Macro Sync: reads/writes the "Character Specific Macros" tab.
+-- Velocity Macro Sync: reads/writes the "Character Specific Macros" tab.
 --
 -- Character macros occupy indices MaxAccountMacros+1 .. MaxAccountMacros+MaxCharacterMacros.
 -- GetNumMacros() returns (numAccount, numCharacter); the character ones are

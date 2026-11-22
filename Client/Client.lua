@@ -1,4 +1,4 @@
--- Class Macro Sync: client abstraction.
+-- Velocity Macro Sync: client abstraction.
 -- Declares exactly what the addon needs from the game client; one file per
 -- flavour implements it (Client_ClassicEra.lua, Client_Forever.lua) and
 -- Client_Select.lua binds the right one onto NS.Client.

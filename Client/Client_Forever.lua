@@ -1,4 +1,4 @@
--- Class Macro Sync: WoW Forever client flavour (Mainline UI code).
+-- Velocity Macro Sync: WoW Forever client flavour (Mainline UI code).
 -- Two-name characters: UnitName() is the FIRST name only, so display names
 -- come from UnitNameUnmodified (name, surname). Keys are always the GUID.
 local ADDON, NS = ...

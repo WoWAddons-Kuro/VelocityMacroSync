@@ -1,4 +1,4 @@
--- Class Macro Sync: small shared helpers (chat output, key building).
+-- Velocity Macro Sync: small shared helpers (chat output, key building).
 local ADDON, NS = ...
 
 NS.PREFIX = "|cff33ccffCMS|r "

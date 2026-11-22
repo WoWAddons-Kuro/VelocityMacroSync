@@ -1,6 +1,6 @@
-# Class Macro Sync (VelocityClassMacroSync) — SPEC
+# Velocity Macro Sync (VelocityMacroSync) — SPEC
 
-Folder / TOC / SavedVariables name: `VelocityClassMacroSync`. Display title: **Class Macro Sync**. Slash: `/cms`, `/classmacrosync`.
+Folder / TOC / SavedVariables name: `VelocityMacroSync`. Display title: **Velocity Macro Sync**. Slash: `/cms`, `/classmacrosync`.
 
 ## Goal
 
@@ -11,7 +11,7 @@ on one character appear on the others at their next login. No UI, no library dep
 Clients: WoW Forever (16001) and Classic Era (11509). Retail is deliberately not shipped until testable.
 SavedVariables are per account per install, so Era / Forever each keep their own class sets.
 
-## Data model (`VelocityClassMacroSyncDB`)
+## Data model (`VelocityMacroSyncDB`)
 
 ```
 classes[CLASS]  = { [key] = { name, icon, body } }     -- the shared set, e.g. classes.MAGE

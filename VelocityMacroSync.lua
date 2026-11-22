@@ -1,4 +1,4 @@
--- Class Macro Sync: entry point. SavedVariables init and slash commands.
+-- Velocity Macro Sync: entry point. SavedVariables init and slash commands.
 local ADDON, NS = ...
 
 local DB_DEFAULTS = { classes = {}, chars = {}, debug = false }
@@ -8,15 +8,15 @@ init:RegisterEvent("ADDON_LOADED")
 init:SetScript("OnEvent", function(self, event, name)
 	if name ~= ADDON then return end
 	self:UnregisterEvent("ADDON_LOADED")
-	VelocityClassMacroSyncDB = VelocityClassMacroSyncDB or {}
-	NS.db = VelocityClassMacroSyncDB
+	VelocityMacroSyncDB = VelocityMacroSyncDB or {}
+	NS.db = VelocityMacroSyncDB
 	for k, v in pairs(DB_DEFAULTS) do
 		if NS.db[k] == nil then NS.db[k] = type(v) == "table" and {} or v end
 	end
 end)
 
 local function Help()
-	NS.Print("Class Macro Sync commands:")
+	NS.Print("Velocity Macro Sync commands:")
 	NS.Print("  /cms status      - what this character and its class set hold")
 	NS.Print("  /cms sync        - run the merge now")
 	NS.Print("  /cms list        - list the class set")

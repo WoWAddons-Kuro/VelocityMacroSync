@@ -1,11 +1,11 @@
 ## Interface: 11509
-## Title: Class Macro Sync
+## Title: Velocity Macro Sync
 ## Notes: Keeps the "Character Specific Macros" tab identical across every character of the same class. Three-way merge at login: adds, edits and deletes all propagate.
 ## Author: Kuro
 ## Version: @project-version@
-## SavedVariables: VelocityClassMacroSyncDB
+## SavedVariables: VelocityMacroSyncDB
 ## IconTexture: Interface\Icons\INV_Misc_Note_06
-## X-Website: https://github.com/WoWAddons-Kuro/VelocityClassMacroSync
+## X-Website: https://github.com/WoWAddons-Kuro/VelocityMacroSync
 
 Core\Util.lua
 
@@ -17,5 +17,6 @@ Client\Client_Select.lua
 Core\Macros.lua
 Core\Merge.lua
 Core\Sync.lua
+UI\Options.lua
 
-VelocityClassMacroSync.lua
+VelocityMacroSync.lua

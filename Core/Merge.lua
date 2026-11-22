@@ -1,4 +1,4 @@
--- Class Macro Sync: the three-way merge. Pure logic, no game API calls, so it
+-- Velocity Macro Sync: the three-way merge. Pure logic, no game API calls, so it
 -- can be reasoned about (and unit-tested) in isolation.
 --
 -- Inputs

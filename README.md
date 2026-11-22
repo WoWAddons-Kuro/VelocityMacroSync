@@ -1,4 +1,4 @@
-# Class Macro Sync
+# Velocity Macro Sync
 
 Keeps the **Character Specific Macros** tab identical across every character of the same class.
 

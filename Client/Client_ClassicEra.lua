@@ -1,4 +1,4 @@
--- Class Macro Sync: Classic Era client flavour (WOW_PROJECT_CLASSIC).
+-- Velocity Macro Sync: Classic Era client flavour (WOW_PROJECT_CLASSIC).
 -- One-name characters; 18 character macro slots.
 local ADDON, NS = ...
 

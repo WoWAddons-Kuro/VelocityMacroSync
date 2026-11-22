@@ -1,4 +1,4 @@
-package-as: VelocityClassMacroSync
+package-as: VelocityMacroSync
 
 ignore:
   - README.md

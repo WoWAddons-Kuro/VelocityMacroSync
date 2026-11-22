@@ -1,8 +1,8 @@
--- Class Macro Sync: orchestration. Listens for the macro list becoming
+-- Velocity Macro Sync: orchestration. Listens for the macro list becoming
 -- available, runs the merge, applies it, and keeps the class set current as
 -- the player edits macros during the session.
 --
--- SavedVariables layout (VelocityClassMacroSyncDB):
+-- SavedVariables layout (VelocityMacroSyncDB):
 --   classes[CLASS]   = { [key] = {name, icon, body} }   shared set per class
 --   chars[guid]      = { class=, name=, snapshot = { [key] = icon } }
 --   debug            = bool

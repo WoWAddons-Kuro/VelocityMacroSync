@@ -1,4 +1,4 @@
--- Class Macro Sync: picks the client implementation for the running
+-- Velocity Macro Sync: picks the client implementation for the running
 -- game and binds it onto NS.Client. Loads after Client.lua and every Client_*.lua.
 local ADDON, NS = ...
 local Client = NS.Client
