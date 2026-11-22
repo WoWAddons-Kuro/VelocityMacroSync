@@ -151,4 +151,47 @@ ok, why = M.One(GetMacroIndexByName("secret"))
 expect("explicit refuses #nosync", ok, false)
 expect("reason nosync", why, "#nosync")
 
+-------------------------------------------------------------------- M5: Remap on "another character of the class"
+-- Simulate: this is warrior B logging in. General tab (account-wide) already has the
+-- stubs from A; B's bars still reference them by name. Sync has put the class macros
+-- on B's page. Remap must re-point B's buttons.
+W.char = {}                                            -- fresh page
+W.slots = {}
+-- Sync gives B the class macros (same bodies). Different NAME for charge on B to prove hash wins.
+table.insert(W.char, { name = "Charge!", icon = 1, body = CHARGE })
+table.insert(W.char, { name = "hs", icon = 1, body = "/cast Heroic Strike" })
+W.slots[1] = "zz001"; W.slots[7] = "zz001"; W.slots[8] = "zz002"
+W.slots[9] = "frost"                                  -- not a stub, untouched
+local n, unresolved = M.Remap()
+expect("remap count", n, 3)
+expect("slot 1 -> class macro by HASH despite rename", W.slots[1], "Charge!")
+expect("slot 7 too", W.slots[7], "Charge!")
+expect("slot 8 -> hs", W.slots[8], "hs")
+expect("non-stub slot untouched", W.slots[9], "frost")
+expect("no unresolved", #unresolved, 0)
+expect("remap idempotent", (M.Remap()), 0)
+
+-------------------------------------------------------------------- M5: stub of ANOTHER class on this bar is ignored
+addGeneral("zz003", M.StubBody("MAGE", NS.MacroKey("/cast Frostbolt"), "frost"))
+W.slots[10] = "zz003"
+expect("foreign-class stub ignored", (M.Remap()), 0)
+expect("foreign stub still on bar", W.slots[10], "zz003")
+
+-------------------------------------------------------------------- M5: unresolved (class macro not synced here yet) warns, leaves stub
+addGeneral("zz004", M.StubBody("WARRIOR", "ffffffff", "ghost"))
+W.slots[11] = "zz004"
+W.printed = {}
+n, unresolved = M.Remap()
+expect("unresolved count", #unresolved, 1)
+expect("unresolved names original", unresolved[1], "ghost")
+expect("stub left on bar", W.slots[11], "zz004")
+local warned = false
+for _, l in ipairs(W.printed) do if l:find("Could not find") then warned = true end end
+expect("warned", warned, true)
+
+-------------------------------------------------------------------- M5: fallback by original NAME when hash misses (class set wiped)
+table.insert(W.char, { name = "ghost", icon = 1, body = "/cast Something Else" })
+n = M.Remap()
+expect("name fallback remaps", W.slots[11], "ghost")
+
 print("\nMIGRATE TESTS PASSED - DeleteMacro was never called")

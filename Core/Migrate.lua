@@ -173,3 +173,55 @@ function Migrate.Auto()
 	end
 	return moved
 end
+
+-- Login remap sweep. Runs after Sync.Run so the class macros are already on
+-- this page. For every bar button that holds a stub of THIS class, find the
+-- class macro on the page (by body hash, falling back to original name) and
+-- put it in the slot. Stubs of other classes are left alone. Idempotent.
+-- Returns remapped count and a list of stub names that could not resolve.
+function Migrate.Remap()
+	if InCombatLockdown() then return 0, {} end
+	local myClass = Client.PlayerClass()
+	local page = Macros.ReadCharacter()
+	local byHash, byName = {}, {}
+	for _, m in ipairs(page) do
+		byHash[NS.MacroKey(m.body)] = m.index
+		byName[m.name] = byName[m.name] or m.index
+	end
+	local stubBodies = {}   -- stub name -> parsed payload (read once per stub)
+	local function payloadFor(stubName)
+		if stubBodies[stubName] == nil then
+			local idx = Client.GetMacroIndexByName(stubName)
+			local body
+			if idx and idx > 0 then local _, _, b = Client.GetMacroInfo(idx); body = b end
+			stubBodies[stubName] = Migrate.ParseStub(body) or false
+		end
+		return stubBodies[stubName] or nil
+	end
+
+	local remapped, unresolved, seenUnresolved = 0, {}, {}
+	for slot = 1, Client.MaxActionSlot() do
+		local name = Client.ActionSlotMacroName(slot)
+		if name and Migrate.IsStubName(name) then
+			local p = payloadFor(name)
+			if p and p.class == myClass then
+				local target = byHash[p.hash] or byName[p.name]
+				if target then
+					Client.PlaceMacroInSlot(target, slot)
+					remapped = remapped + 1
+				elseif not seenUnresolved[name] then
+					seenUnresolved[name] = true
+					unresolved[#unresolved + 1] = p.name
+				end
+			end
+		end
+	end
+	if remapped > 0 then
+		NS.Print(string.format("Re-pointed %d bar button%s from migrated General macros to your %s macros.",
+			remapped, remapped == 1 and "" or "s", (UnitClass("player")) or myClass))
+	end
+	if #unresolved > 0 then
+		NS.Warn("Could not find the class macro for: " .. table.concat(unresolved, ", ") .. " (not synced to this character yet?)")
+	end
+	return remapped, unresolved
+end

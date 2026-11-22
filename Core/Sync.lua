@@ -155,17 +155,33 @@ end
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("UPDATE_MACROS")
 frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+
+-- After the FIRST successful merge of a session: migrate class macros off the
+-- General tab (if enabled) and re-point any stub buttons. Both are no-ops when
+-- there is nothing to do, and both are deferred to post-combat by Sync.Run's
+-- own gate (they are only reached when the merge itself ran).
+local postLoginDone = false
+local function PostLogin()
+	if postLoginDone or not synced or not NS.Migrate then return end
+	postLoginDone = true
+	NS.Migrate.Auto()
+	NS.Migrate.Remap()
+	if NS.OptionsRefresh then NS.OptionsRefresh() end
+end
+
 frame:SetScript("OnEvent", function(_, event)
 	if event == "PLAYER_ENTERING_WORLD" then
 		inWorld = true
-		C_Timer.After(1, function() if not synced then Sync.Run("login") end end)
+		C_Timer.After(1, function() if not synced then Sync.Run("login") end; PostLogin() end)
 	elseif event == "UPDATE_MACROS" then
 		if not inWorld or applying then return end
 		Sync.Run(synced and "edit" or "login")
+		PostLogin()
 	elseif event == "PLAYER_REGEN_ENABLED" then
 		if pendingCombat then
 			pendingCombat = false
 			Sync.Run("post-combat")
+			PostLogin()
 		end
 	end
 end)
@@ -189,6 +205,7 @@ end
 -- Called after a full data wipe so the next sync behaves like a first login.
 function Sync.ForgetSession()
 	synced = false
+	postLoginDone = false
 	Sync.overflowReported = nil
 end
 
