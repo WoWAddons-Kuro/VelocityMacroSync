@@ -6,6 +6,7 @@
 ## SavedVariables: VelocityMacroSyncDB
 ## IconTexture: Interface\AddOns\VelocityMacroSync\Assets\VelocityMacroSync_Icon.tga
 ## X-Website: https://github.com/WoWAddons-Kuro/VelocityMacroSync
+## X-Curse-Project-ID: 1825015
 
 Core\Util.lua
 
