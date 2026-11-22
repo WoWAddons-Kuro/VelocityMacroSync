@@ -40,8 +40,8 @@ Stubs are renamed so they sort to the end of the General tab, forming a block of
 Character A (mage) logs in
   1. class sync merge runs           (character tab == class store)
   2. spell set for MAGE updated      (from A's spellbook)
-  3. classifier scans General tab
-  4. for each general macro classified MAGE:
+  3. bar scan: which general macros are on A's action bars
+  4. for each of those classified MAGE:
        create class macro  ->  re-place A's bar buttons  ->  convert general macro to stub
   5. remap sweep: any bar button on a MAGE stub -> class macro
 
@@ -85,7 +85,12 @@ The set only contains spells some character of that class has learned. The conse
 
 ### Classifier
 
-For each general macro that is not already a stub:
+**Gate: only general macros this character actually has on an action bar are candidates.** A general macro
+that is not placed on any of this character's bars is never migrated by this character, whatever it contains.
+A macro on the bars is the one the player uses; an unused one in the General tab is a leftover they may not
+want moved. This also makes the bar scan the source of truth for the re-place step below.
+
+For each general macro referenced by at least one of this character's action slots and not already a stub:
 
 1. Extract spell names from `/cast`, `/use`, `/castsequence`, `#showtooltip` and `#show` lines.
 2. Strip `[conditionals]`, `reset=` clauses, rank suffixes and leading `!`; split on `;` and (for `/castsequence`) `,`.
@@ -93,7 +98,10 @@ For each general macro that is not already a stub:
 
 A macro is migrated only when **all** of the following hold:
 
-- At least one name is recognized as a spell of the logged-in character's class.
+- **At least one name is a spell of the logged-in character's class. A macro with no class spell in it is
+  never migrated, by anyone, ever.** `/say`, `/target`, `/equip`, trinket-only, mount, bandage and
+  consumable macros stay in General. This is the rule that makes the "different class" case impossible:
+  a migrated macro always contains a spell only its class can have.
 - No name is recognized as a spell of a different class.
 - No name is unrecognized. (Item names in `/use` lines are unrecognized by this definition, so macros that mix class spells with trinkets or consumables are left alone. See Open Questions.)
 
@@ -185,7 +193,7 @@ If the user wants the general slots back they delete the stubs by hand, knowing 
 |---|---|
 | Same class, addon running | Buttons remapped at login. |
 | Same class, addon disabled | Button shows the stub and does nothing until the addon runs. |
-| Different class with the stub on a bar | Button shows the stub and does nothing. Not remapped. |
+| Different class | Cannot happen for a correctly classified macro: every spell in it belongs to one class, so no other class could have been using it. A stub of another class on a bar is therefore only ever the result of the user placing the general macro there by mistake; it stays inert and is not remapped. |
 | Character tab full at migration time | Macro not migrated; message printed. |
 | Class macro with same name, different body already exists | Both exist in the character tab (duplicate names are allowed); the migrated one is tracked by ID. |
 
