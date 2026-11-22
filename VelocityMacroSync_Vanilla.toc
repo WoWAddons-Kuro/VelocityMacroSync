@@ -18,6 +18,7 @@ Client\Client_Select.lua
 
 Core\Macros.lua
 Core\SpellSets.lua
+Core\Classify.lua
 Core\Merge.lua
 Core\Sync.lua
 UI\Options.lua
