@@ -59,23 +59,42 @@ function Client.StripRank(name)
 	return (name:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
--- Shared between the Classic-API flavours (Era, Forever): walk the spellbook
--- tabs, skip tab 1 (General: racials, professions, shared abilities), return
--- the de-ranked, de-duplicated spell names of the player's class tabs.
+-- Spellbook walk. Two API shapes exist and a client may have either, so try
+-- both and report which one answered (Client.spellbookSource) so /status can
+-- say what happened instead of silently learning nothing.
+--   classic : GetNumSpellTabs / GetSpellTabInfo / GetSpellBookItemName
+--   modern  : C_SpellBook.GetNumSpellBookSkillLines / GetSpellBookSkillLineInfo / GetSpellBookItemName
+-- Tab/skill-line 1 is General (racials, professions) and is skipped.
+local function AddName(names, seen, raw)
+	local name = Client.StripRank(raw)
+	if name and name ~= "" and not seen[name] then seen[name] = true; names[#names + 1] = name end
+end
+
 function Client.ReadSpellbookClassic()
 	local names, seen = {}, {}
-	local numTabs = GetNumSpellTabs and GetNumSpellTabs() or 0
-	for tab = 2, numTabs do
-		local _, _, offset, numSpells = GetSpellTabInfo(tab)
-		for i = (offset or 0) + 1, (offset or 0) + (numSpells or 0) do
-			local name = GetSpellBookItemName(i, BOOKTYPE_SPELL or "spell")
-			name = Client.StripRank(name)
-			if name and name ~= "" and not seen[name] then
-				seen[name] = true
-				names[#names + 1] = name
+	if GetNumSpellTabs and GetSpellTabInfo and GetSpellBookItemName then
+		local numTabs = GetNumSpellTabs() or 0
+		for tab = 2, numTabs do
+			local _, _, offset, numSpells = GetSpellTabInfo(tab)
+			for i = (offset or 0) + 1, (offset or 0) + (numSpells or 0) do
+				AddName(names, seen, (GetSpellBookItemName(i, BOOKTYPE_SPELL or "spell")))
 			end
 		end
+		if #names > 0 then Client.spellbookSource = "classic"; return names end
 	end
+	if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines and C_SpellBook.GetSpellBookSkillLineInfo and C_SpellBook.GetSpellBookItemName then
+		local bank = (Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player) or 0
+		for line = 2, C_SpellBook.GetNumSpellBookSkillLines() or 0 do
+			local info = C_SpellBook.GetSpellBookSkillLineInfo(line)
+			if info and info.itemIndexOffset and info.numSpellBookItems then
+				for i = info.itemIndexOffset + 1, info.itemIndexOffset + info.numSpellBookItems do
+					AddName(names, seen, (C_SpellBook.GetSpellBookItemName(i, bank)))
+				end
+			end
+		end
+		if #names > 0 then Client.spellbookSource = "modern"; return names end
+	end
+	Client.spellbookSource = "none"
 	return names
 end
 

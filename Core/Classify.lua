@@ -85,7 +85,9 @@ function Classify.Verdict(body, classesFor)
 			end
 		end
 	end
-	if #classList == 0 then return { class = nil, reason = "noclassspell" } end
+	-- Every name unknown: NOT "no class spell" - we simply have not seen a
+	-- spellbook that teaches these yet. Say so, with the names.
+	if #classList == 0 then return { class = nil, reason = "unknown", names = unknown } end
 	if #classList > 1 then table.sort(classList); return { class = nil, reason = "mixed", classes = classList } end
 	if #unknown > 0 then return { class = nil, reason = "unknown", names = unknown } end
 	return { class = classList[1] }

@@ -200,6 +200,8 @@ function Sync.Status()
 		if r.class == class and guid ~= Client.PlayerKey() then others[#others + 1] = r.name or guid end
 	end
 	if #others > 0 then NS.Print("other " .. class .. " characters: " .. table.concat(others, ", ")) end
+	NS.Print(string.format("spell set: %d %s spells known (spellbook API: %s), auto-migrate: %s",
+		NS.SpellSets and NS.SpellSets.Known(class) or 0, class, tostring(Client.spellbookSource or "not read yet"), NS.db.autoMigrate and "on" or "off"))
 end
 
 -- Called after a full data wipe so the next sync behaves like a first login.
