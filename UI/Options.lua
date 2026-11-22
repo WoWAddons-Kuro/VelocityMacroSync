@@ -21,14 +21,29 @@ end
 
 local function OpenMacroWindow()
 	if InCombatLockdown() then NS.Warn("cannot open the macro window in combat") return end
-	if not MacroFrame and UIParentLoadAddOn then
-		if C_AddOns and C_AddOns.LoadAddOn then C_AddOns.LoadAddOn("Blizzard_MacroUI") else UIParentLoadAddOn("Blizzard_MacroUI") end
+	-- Blizzard_MacroUI is load-on-demand.
+	if not MacroFrame then
+		if C_AddOns and C_AddOns.LoadAddOn then C_AddOns.LoadAddOn("Blizzard_MacroUI")
+		elseif LoadAddOn then LoadAddOn("Blizzard_MacroUI") end
 	end
-	if ShowMacroFrame then ShowMacroFrame() elseif MacroFrame then ShowUIPanel(MacroFrame) end
-	-- Jump to the character tab (tab 2) so the user lands on what we sync.
-	if MacroFrame and MacroFrameTab2 and MacroFrameTab2:IsShown() then
-		if MacroFrame_SetTab then MacroFrame_SetTab(2) elseif MacroFrameTab2.Click then MacroFrameTab2:Click() end
+	if not MacroFrame then NS.Warn("Blizzard_MacroUI could not be loaded") return end
+	-- The Settings window is itself a UI panel; MacroFrame is a "left" UI panel and
+	-- is swallowed/hidden while Settings is up. Close Settings first, then show the
+	-- macro window on the next frame so the panel manager has settled.
+	if SettingsPanel and SettingsPanel:IsShown() then
+		HideUIPanel(SettingsPanel)
+	elseif InterfaceOptionsFrame and InterfaceOptionsFrame:IsShown() then
+		HideUIPanel(InterfaceOptionsFrame)
 	end
+	if GameMenuFrame and GameMenuFrame:IsShown() then HideUIPanel(GameMenuFrame) end
+	C_Timer.After(0, function()
+		if MacroFrame_Show then MacroFrame_Show() else ShowUIPanel(MacroFrame) end
+		-- Land on the Character Specific tab (tab 2), which is what we sync.
+		local tab2 = MacroFrameTab2 or (MacroFrame.Tabs and MacroFrame.Tabs[2])
+		if tab2 and tab2:IsShown() and tab2:IsEnabled() then
+			tab2:Click()
+		end
+	end)
 end
 
 local function CreateOptions()
