@@ -26,6 +26,14 @@ function UnitGUID() return cur().guid end
 function UnitName() return cur().name end
 function UnitClass() return "Warrior", cur().class end
 function InCombatLockdown() return false end
+-- Fake spellbook: tab 1 = General (skipped), tab 2 = class spells for the current char.
+BOOKTYPE_SPELL = "spell"
+function GetNumSpellTabs() return 2 end
+function GetSpellTabInfo(tab)
+	if tab == 1 then return "General", "", 0, 2 end
+	return cur().class, "", 2, #(cur().spells or {})
+end
+function GetSpellBookItemName(i) if i <= 2 then return ({ "Attack", "Shoot" })[i] end return (cur().spells or {})[i - 2] end
 local timers = {}
 C_Timer = { After = function(_, f) timers[#timers + 1] = f end }
 local function flushTimers() local t = timers; timers = {}; for _, f in ipairs(t) do f() end end
@@ -35,7 +43,7 @@ function CreateFrame() return { RegisterEvent = function() end, SetScript = func
 -------------------------------------------------------------------- load addon
 local NS = {}
 local function load(file) local f = assert(loadfile(file)); f("VelocityMacroSync", NS) end
-for _, f in ipairs { "Core/Util.lua", "Client/Client.lua", "Client/Client_ClassicEra.lua", "Client/Client_Forever.lua", "Client/Client_Retail.lua", "Client/Client_Select.lua", "Core/Macros.lua", "Core/Merge.lua", "Core/Sync.lua" } do load(f) end
+for _, f in ipairs { "Core/Util.lua", "Client/Client.lua", "Client/Client_ClassicEra.lua", "Client/Client_Forever.lua", "Client/Client_Retail.lua", "Client/Client_Select.lua", "Core/Macros.lua", "Core/SpellSets.lua", "Core/Merge.lua", "Core/Sync.lua" } do load(f) end
 NS.db = { classes = {}, chars = {}, debug = false }
 assert(NS.Macros.Delete == nil, "Macros.Delete must not exist")
 

@@ -270,7 +270,10 @@ The page (`UI\Options.lua`) grows from two cards to four, top to bottom:
      > WARNING: This will *move* your class-specific macros from General into per-character macros for each
      > class. Make sure you are happy with this addon before you turn this on, because characters referencing
      > general macros will only be updated if this addon is still running when you first login to them.
-   - A **dense table** of every General-tab macro (stubs excluded): name | detected class | `Migrate` button.
+   - A **dense table** of every General-tab macro (stubs excluded) in **two groups** separated by a thin
+     divider line: first every macro whose verdict is the **logged-in character's class** (these are the
+     ones the `Migrate` button can act on), then everything else. Within each group, alphabetical by name.
+     Columns: name | detected class | `Migrate` button.
      Detected class is the classifier's verdict with the current spell sets: a class token coloured with
      `RAID_CLASS_COLORS`, or grey `—` with a reason in a tooltip (`no class spell`, `unknown: Frostfire Bolt`,
      `#nosync`, `mixed: MAGE, WARRIOR`). The `Migrate` button is enabled only when the verdict is the
