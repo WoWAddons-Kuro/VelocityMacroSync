@@ -52,15 +52,17 @@ init:SetScript("OnEvent", function(self, event, name)
 	end
 end)
 
--- Wipes every byte of saved data. Pages are untouched (the addon never deletes
--- macros); at the next sync every character re-shares what is on its page.
+-- Wipes every byte of saved data, then immediately re-syncs so this
+-- character's page becomes the new class set. Pages are untouched (the addon
+-- never deletes macros); other characters re-share at their next login.
 function NS.WipeAllData()
 	for k in pairs(NS.db) do NS.db[k] = nil end
 	for k, v in pairs(DB_DEFAULTS) do NS.db[k] = type(v) == "table" and {} or v end
 	NS.db.schema = 3
 	if NS.Sync.ForgetSession then NS.Sync.ForgetSession() end
+	NS.Print("all saved data wiped. No macros were touched on any character; other characters re-share at their next login.")
+	NS.Sync.Run("login")
 	if NS.OptionsRefresh then NS.OptionsRefresh() end
-	NS.Print("all saved data wiped. No macros were touched on any character; each one re-shares its page at its next login. Run /cms sync to re-share this one now.")
 end
 
 StaticPopupDialogs["VELOCITYMACROSYNC_WIPE"] = {
