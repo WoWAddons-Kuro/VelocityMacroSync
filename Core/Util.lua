@@ -1,7 +1,7 @@
 -- Velocity Macro Sync: small shared helpers (chat output, key building).
 local ADDON, NS = ...
 
-NS.PREFIX = "|cff33ccffCMS|r "
+NS.PREFIX = "|cff33ccffVelocityMacroSync|r "
 
 function NS.Print(msg)
 	DEFAULT_CHAT_FRAME:AddMessage(NS.PREFIX .. tostring(msg))
