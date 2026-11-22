@@ -21,6 +21,7 @@ Core\SpellSets.lua
 Core\Classify.lua
 Core\Merge.lua
 Core\Sync.lua
+Core\Migrate.lua
 UI\Options.lua
 
 VelocityMacroSync.lua
