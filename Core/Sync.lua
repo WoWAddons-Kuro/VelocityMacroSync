@@ -44,7 +44,7 @@ end
 local function TakeSnapshot(rec)
 	local snap = {}
 	for _, m in ipairs(Macros.ReadCharacter()) do
-		snap[NS.MacroKey(m.name, m.body)] = { name = m.name, icon = m.icon or false }
+		snap[NS.MacroKey(m.body)] = { name = m.name, icon = m.icon or false }
 	end
 	rec.snapshot = snap
 end
@@ -55,20 +55,20 @@ local function Apply(plan, classSet, rec)
 	applying = true
 
 	for _, key in ipairs(plan.tombstone) do
-		NS.Debug("tombstone " .. key:gsub("\n", " | "))
+		NS.Debug("tombstone " .. key)
 		rec.excluded[key] = true
 	end
 	for _, e in ipairs(plan.classAdd) do
 		NS.Debug("class += " .. e.name)
 		NS.db.seq = (NS.db.seq or 0) + 1
-		classSet[NS.MacroKey(e.name, e.body)] = { name = e.name, icon = e.icon, body = e.body, seq = NS.db.seq }
+		classSet[NS.MacroKey(e.body)] = { name = e.name, icon = e.icon, body = e.body, seq = NS.db.seq }
 	end
 	for _, a in ipairs(plan.classAttr) do
-		local e = classSet[a.key]
+		local e = classSet[a.hash]
 		if e then NS.Debug("class attr " .. e.name .. " -> " .. a.name); e.name = a.name; e.icon = a.icon end
 	end
 	for _, e in ipairs(plan.localEdit) do
-		NS.Debug("page edit " .. e.oldName .. (e.oldName ~= e.name and (" -> " .. e.name) or ""))
+		NS.Debug("page edit -> " .. e.name)
 		Macros.Edit(e.index, e.name, e.icon, e.body)
 	end
 	for _, c in ipairs(plan.localCreate) do
@@ -131,6 +131,11 @@ function Sync.Run(reason)
 	local function plural(n) return n == 1 and "" or "s" end
 	if #created > 0 then
 		Say(string.format("Added %d %s macro%s from your other characters: %s", #created, classLabel, plural(#created), Names(created)))
+		for _, c in ipairs(created) do
+			if c.classRename then
+				Say(string.format("  \"%s\" was named \"%s\" elsewhere; you already have a different \"%s\" here so it was left alone", c.name, c.classRename, c.classRename))
+			end
+		end
 	end
 	if #plan.localEdit > 0 then
 		Say(string.format("Updated %d macro%s edited on another character: %s", #plan.localEdit, plural(#plan.localEdit), Names(plan.localEdit)))
@@ -179,6 +184,12 @@ function Sync.Status()
 		if r.class == class and guid ~= Client.PlayerKey() then others[#others + 1] = r.name or guid end
 	end
 	if #others > 0 then NS.Print("other " .. class .. " characters: " .. table.concat(others, ", ")) end
+end
+
+-- Called after a full data wipe so the next sync behaves like a first login.
+function Sync.ForgetSession()
+	synced = false
+	Sync.overflowReported = nil
 end
 
 -- Forget this character's snapshot AND tombstones: next sync pulls everything in the class set.

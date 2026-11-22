@@ -17,8 +17,12 @@ character appear on the others at their next login. No library dependencies.
    The macro stays in the class set and still syncs to every other character. It is never recreated
    on the character that tombstoned it, unless that character runs `/cms reset`.
 4. **The addon NEVER renames a macro to dodge a collision.** There is no `Name~2` path. A macro's
-   identity is its **body**; name and icon are attributes reconciled in place. Same body on two
-   characters is the same macro, whatever either calls it. (Set 2026-11-22 after `charge~2`, `~3`, `~4`…)
+   identity is the **content hash of its body**; name and icon are attributes reconciled in place. Same body
+   on two characters is the same macro, whatever either calls it. (Set 2026-11-22 after `charge~2`, `~3`, `~4`…)
+5. **The addon NEVER renames a macro the player made.** The player's `charge` stays `charge` on their page,
+   even if a different-bodied `charge` exists in the class set. The only rename that ever happens is to an
+   INCOMING class macro being created on a page where its name is already held by a different body; it gets
+   `Name 2`, and chat says so.
 
 Clients: WoW Forever (16001) and Classic Era (11509). Retail is deliberately not shipped until testable.
 SavedVariables are per account per install, so Era / Forever each keep their own class sets.
@@ -89,8 +93,9 @@ the interface (Forever display name = `UnitNameUnmodified` name + surname). `Cli
 | `/cms` / `/cms status` | character, class, slots used, class-set size, snapshot state, sibling characters |
 | `/cms sync` | run the merge now |
 | `/cms list` | names in the class set |
-| `/cms reset` | forget this character's snapshot and tombstones → next sync pulls the whole class set |
+| `/cms resetchar` | forget this character's snapshot and tombstones → next sync pulls the whole class set |
 | `/cms resetclass` | clear the class-set record and sibling snapshots/tombstones. Pages are untouched; every character re-shares at next login |
+| `/cms reset` (also `/velocitymacrosync reset`) | **confirm dialog**, then delete ALL saved data for every class and character. Pages untouched. Same action as the red "Delete All Saved Data" button at the bottom of the settings page |
 | `/cms debug` | per-action chat trace |
 
 ## Tests

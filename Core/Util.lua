@@ -17,12 +17,28 @@ function NS.Debug(msg)
 	end
 end
 
--- A macro's identity is its BODY. Name and icon are attributes the merge
--- reconciles in place; a rename or icon change is an edit of the same macro,
--- never a new one. Same body on two characters = the same macro, whatever
--- either happens to call it.
-function NS.MacroKey(_, body)
-	return body or ""
+-- A macro's identity is a CONTENT HASH of its body. Name and icon are
+-- attributes. Same body on two characters = the same macro, whatever either
+-- calls it. Tombstones are on the hash too.
+--
+-- FNV-1a 32-bit, hex. Lua 5.1 has no bit ops; emulate the xor on bytes.
+local function bxor(a, b)
+	local r, bit = 0, 1
+	while a > 0 or b > 0 do
+		local x, y = a % 2, b % 2
+		if x ~= y then r = r + bit end
+		a, b, bit = (a - x) / 2, (b - y) / 2, bit * 2
+	end
+	return r
+end
+function NS.MacroKey(body)
+	body = body or ""
+	local h = 2166136261
+	for i = 1, #body do
+		h = bxor(h, body:byte(i))
+		h = (h * 16777619) % 4294967296
+	end
+	return string.format("%08x", h)
 end
 
 -- Deliberately no UniqueName / Name~2 helper: the addon never renames a macro to dodge a collision.

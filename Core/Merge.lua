@@ -1,34 +1,48 @@
 -- Velocity Macro Sync: the merge. Pure logic, no game API calls.
 --
 -- ============================  HARD RULES  ============================
---  1. THE ADDON NEVER DELETES A MACRO FROM THE CHARACTER PAGE. There is no
---     delete path anywhere in this addon; DeleteMacro is not even wrapped.
---  2. THE CLASS SET IS APPEND-ONLY. Nothing is ever removed from it.
---  3. When the PLAYER deletes a macro from their page, that character records
---     a TOMBSTONE for it. The macro stays in the class set and still goes to
---     every other character.
---  4. THE ADDON NEVER RENAMES A MACRO TO AVOID A COLLISION. A macro's
---     identity is its BODY. Name and icon are attributes that get reconciled
---     in place. There is no Name~2 path.
+--  1. THE ADDON NEVER DELETES A MACRO FROM THE CHARACTER PAGE. Only the
+--     player does. DeleteMacro is not wrapped anywhere.
+--  2. THE CLASS SET IS APPEND-ONLY and KEYED BY CONTENT HASH of the body.
+--     Same body = same macro, full stop. Nothing is ever removed from it.
+--  3. A PLAYER DELETION becomes a per-character TOMBSTONE on the hash.
+--  4. THE ADDON NEVER RENAMES A MACRO THE PLAYER MADE. If the player names
+--     their macro "charge", it stays "charge" on their page. The only rename
+--     that ever happens is to an INCOMING class macro being created on a page
+--     where its name is already taken by a macro with a DIFFERENT body.
 -- =======================================================================
 --
 -- Inputs
---   snapshot : { [key] = icon }   what THIS character had after its last sync (nil = never synced)
---   excluded : { [key] = true }   tombstones for THIS character
---   localList: { {index,name,icon,body}, ... }   what the character page holds right now
---   classSet : { [key] = {name,icon,body,seq} } the shared set for this class
--- key = body.
+--   snapshot : { [hash] = { name=, icon= } }   what THIS page had after its last sync (nil = never synced)
+--   excluded : { [hash] = true }                tombstones for THIS character
+--   localList: { {index,name,icon,body}, ... }  what the page holds right now
+--   classSet : { [hash] = {name,icon,body,seq} } the shared set
 --
 -- Plan:
---   classAdd    = { entry, ... }                              add to class set
---   classAttr   = { {key=, name=, icon=}, ... }               name/icon changed here -> update class entry
---   localCreate = { entry, ... }                              CreateMacro on this page
---   localEdit   = { {index=,name=,icon=,body=,oldName=}, ...} EditMacro in place
---   tombstone   = { key, ... }                                player deleted these here since last sync
+--   classAdd    = { entry, ... }                       add to class set (hash of body)
+--   classAttr   = { {hash=, name=, icon=}, ... }       player changed name/icon of a shared macro here
+--   localCreate = { entry, ... }                       CreateMacro on this page (entry.name may be suffixed)
+--   localEdit   = { {index=,name=,icon=,body=}, ... }  EditMacro in place (name/icon only, never body of a player macro)
+--   tombstone   = { hash, ... }                        player deleted these here since last sync
 local ADDON, NS = ...
 
 local Merge = {}
 NS.Merge = Merge
+
+-- "Charge" taken -> "Charge 2", "Charge 3" ... within the 16-char limit.
+-- Used ONLY for an incoming class macro whose name is held on this page by a different body.
+local function FreeName(name, taken)
+	if not taken[name] then return name end
+	local n = 2
+	while true do
+		local suffix = " " .. n
+		local base = name
+		if #base + #suffix > 16 then base = base:sub(1, 16 - #suffix) end
+		local c = base .. suffix
+		if not taken[c] then return c end
+		n = n + 1
+	end
+end
 
 function Merge.Plan(snapshot, excluded, localList, classSet)
 	local plan = { classAdd = {}, classAttr = {}, localCreate = {}, localEdit = {}, tombstone = {} }
@@ -36,78 +50,66 @@ function Merge.Plan(snapshot, excluded, localList, classSet)
 	snapshot = snapshot or {}
 	excluded = excluded or {}
 
-	local localSet = NS.Macros.ToSet(localList)
-	local localByName = {}
-	for key, m in pairs(localSet) do localByName[m.name] = m end
-
-	-- Newest class entry per name (append-only set: an edited body leaves the old
-	-- one behind; highest seq for a name is current).
-	local classNewestByName = {}
-	for key, e in pairs(classSet) do
-		local cur = classNewestByName[e.name]
-		if not cur or (e.seq or 0) > (classSet[cur].seq or 0) then classNewestByName[e.name] = key end
+	-- Page, keyed by hash; and the set of names in use on the page.
+	local localByHash, localNames = {}, {}
+	for _, m in ipairs(localList) do
+		localByHash[NS.MacroKey(m.body)] = m
+		localNames[m.name] = m
 	end
 
-	-- Tombstones: in snapshot, no longer on page, and the player did not simply
-	-- edit it (a body edit shows up as old key gone + a same-NAME macro present).
-	for key in pairs(snapshot) do
-		if not localSet[key] and not excluded[key] then
-			local c = classSet[key]
-			local renamedOrEdited = c and localByName[c.name] ~= nil
-			if not renamedOrEdited then
-				plan.tombstone[#plan.tombstone + 1] = key
+	-- Tombstones: hash was on the page at last sync, is not now, and the player
+	-- did not just edit its body (a body edit shows as hash gone + same NAME present).
+	for hash, s in pairs(snapshot) do
+		if not localByHash[hash] and not excluded[hash] then
+			local stillNamed = localNames[s.name]
+			if not stillNamed then
+				plan.tombstone[#plan.tombstone + 1] = hash
 			end
-			excluded[key] = true   -- either way, never recreate this exact body here
+			excluded[hash] = true   -- either way: never recreate this exact body here
 		end
 	end
-
-	local handled = {}
 
 	-- Pass 1: every macro on the page.
-	for key, m in pairs(localSet) do
-		local c = classSet[key]
-		if c then
-			handled[key] = true
-			local newestKey = classNewestByName[c.name]
-			if newestKey ~= key and not excluded[newestKey] and not localSet[newestKey] then
-				-- Body edited elsewhere: move this page to the newer body in place.
-				local n = classSet[newestKey]
-				handled[newestKey] = true
-				plan.localEdit[#plan.localEdit + 1] = { index = m.index, name = n.name, icon = n.icon, body = n.body, oldName = m.name }
-				excluded[key] = true
+	for hash, m in pairs(localByHash) do
+		local c = classSet[hash]
+		if not c then
+			-- Body unknown to the class set: share it under the player's name.
+			plan.classAdd[#plan.classAdd + 1] = { name = m.name, icon = m.icon, body = m.body }
+		elseif m.name ~= c.name or m.icon ~= c.icon then
+			-- Same body, different name/icon. Who changed it?
+			local s = snapshot[hash]
+			local oursChanged = (s ~= nil) and (s.name ~= m.name or s.icon ~= m.icon)
+			if oursChanged or not hadSnapshot then
+				-- Player renamed/re-iconed it here (or this is the first sync): the page is truth.
+				plan.classAttr[#plan.classAttr + 1] = { hash = hash, name = m.name, icon = m.icon }
+			elseif not localNames[c.name] or localNames[c.name] == m then
+				-- Renamed elsewhere, and the new name is free here: follow it.
+				plan.localEdit[#plan.localEdit + 1] = { index = m.index, name = c.name, icon = c.icon, body = m.body }
 			else
-				-- Same body. Reconcile name/icon: if OURS changed since snapshot, push to class;
-				-- otherwise take the class's.
-				if m.name ~= c.name or m.icon ~= c.icon then
-					local s = snapshot[key]
-					local oursChanged = s and (s.name ~= m.name or s.icon ~= m.icon)
-					if oursChanged or not hadSnapshot then
-						plan.classAttr[#plan.classAttr + 1] = { key = key, name = m.name, icon = m.icon }
-					else
-						plan.localEdit[#plan.localEdit + 1] = { index = m.index, name = c.name, icon = c.icon, body = m.body, oldName = m.name }
-					end
+				-- New name is taken here by a different body: keep our name, take the icon only.
+				if m.icon ~= c.icon then
+					plan.localEdit[#plan.localEdit + 1] = { index = m.index, name = m.name, icon = c.icon, body = m.body }
 				end
 			end
-		else
-			-- Body not in the class set: new here (or edited here). Share it.
-			plan.classAdd[#plan.classAdd + 1] = { name = m.name, icon = m.icon, body = m.body }
-			-- If a class entry with this NAME exists and is not on this page, that is the
-			-- body we edited away from; do not recreate it here.
-			local oldKey = classNewestByName[m.name]
-			if oldKey and not localSet[oldKey] then excluded[oldKey] = true; handled[oldKey] = true end
 		end
 	end
 
-	-- Pass 2: class entries not on the page and not tombstoned here -> create.
-	-- Only the newest body per name is a candidate, and only if the name is free.
-	for name, key in pairs(classNewestByName) do
-		if not handled[key] and not excluded[key] and not localByName[name] then
-			local e = classSet[key]
-			plan.localCreate[#plan.localCreate + 1] = { name = e.name, icon = e.icon, body = e.body }
-		end
+	-- Pass 2: class macros not on this page and not tombstoned here -> create.
+	-- If the class name is held here by a DIFFERENT body, the incoming one gets a
+	-- suffixed name. The player's macro is never touched.
+	local taken = {}
+	for n in pairs(localNames) do taken[n] = true end
+	local incoming = {}
+	for hash, e in pairs(classSet) do
+		if not localByHash[hash] and not excluded[hash] then incoming[#incoming + 1] = e end
+	end
+	table.sort(incoming, function(a, b) return (a.seq or 0) < (b.seq or 0) end)
+	for _, e in ipairs(incoming) do
+		local name = FreeName(e.name, taken)
+		taken[name] = true
+		plan.localCreate[#plan.localCreate + 1] = { name = name, icon = e.icon, body = e.body, classRename = (name ~= e.name) and e.name or nil }
 	end
 
-	table.sort(plan.localCreate, function(a, b) return a.name < b.name end)
 	return plan
 end
 

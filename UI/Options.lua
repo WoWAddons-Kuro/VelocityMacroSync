@@ -100,6 +100,22 @@ local function CreateOptions()
 	local list = card:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
 	list:SetPoint("TOPLEFT", summary, "BOTTOMLEFT", 0, -8); list:SetWidth(BOX_W - 2 * PAD); list:SetJustifyH("LEFT"); list:SetSpacing(2)
 
+	-- Danger zone: wipe all saved data.
+	local danger = Box(content)
+	danger:SetPoint("TOPLEFT", card, "BOTTOMLEFT", 0, -14)
+	if danger.SetBackdropBorderColor then danger:SetBackdropBorderColor(0.8, 0.25, 0.25, 0.8) end
+	local dHeader = danger:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+	dHeader:SetPoint("TOPLEFT", PAD, -PAD); dHeader:SetText("|cffff4040Reset|r")
+	local dText = danger:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+	dText:SetPoint("TOPLEFT", dHeader, "BOTTOMLEFT", 0, -6); dText:SetWidth(BOX_W - 2 * PAD - 180); dText:SetJustifyH("LEFT")
+	dText:SetText("Deletes all saved sync data for every class and character on this account. " ..
+		"No macros are removed from any character's macro page; each character re-shares what is on its page at its next login.")
+	local wipeBtn = CreateFrame("Button", nil, danger, "UIPanelButtonTemplate")
+	wipeBtn:SetSize(160, 22); wipeBtn:SetText("Delete All Saved Data")
+	wipeBtn:SetPoint("TOPRIGHT", -PAD, -PAD + 3)
+	wipeBtn:SetScript("OnClick", function() NS.ConfirmWipe() end)
+	danger:SetHeight(PAD + 14 + 6 + math.max(dText:GetStringHeight(), 22) + PAD)
+
 	local function Refresh()
 		local classFile = Client.PlayerClass() or "?"
 		local r, g, b = ClassColor()
@@ -117,7 +133,7 @@ local function CreateOptions()
 			list:SetText(table.concat(names, "\n"))
 		end
 		card:SetHeight(PAD + 14 + 6 + summary:GetStringHeight() + 8 + list:GetStringHeight() + PAD)
-		local topY, bottom = content:GetTop(), card:GetBottom()
+		local topY, bottom = content:GetTop(), danger:GetBottom()
 		if topY and bottom then content:SetHeight(topY - bottom + 24) end
 	end
 

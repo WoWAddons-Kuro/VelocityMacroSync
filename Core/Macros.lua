@@ -29,7 +29,7 @@ end
 function Macros.ToSet(list)
 	local set = {}
 	for _, m in ipairs(list) do
-		set[NS.MacroKey(m.name, m.body)] = { name = m.name, icon = m.icon, body = m.body, index = m.index }
+		set[NS.MacroKey(m.body)] = { name = m.name, icon = m.icon, body = m.body, index = m.index }
 	end
 	return set
 end

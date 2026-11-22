@@ -29,7 +29,7 @@ function InCombatLockdown() return false end
 local timers = {}
 C_Timer = { After = function(_, f) timers[#timers + 1] = f end }
 local function flushTimers() local t = timers; timers = {}; for _, f in ipairs(t) do f() end end
-DEFAULT_CHAT_FRAME = { AddMessage = function(_, m) World.printed[#World.printed + 1] = m end }
+StaticPopupDialogs = {}; function StaticPopup_Show() end; DEFAULT_CHAT_FRAME = { AddMessage = function(_, m) World.printed[#World.printed + 1] = m end }
 function CreateFrame() return { RegisterEvent = function() end, SetScript = function() end } end
 
 -------------------------------------------------------------------- load addon
@@ -71,26 +71,27 @@ World.current = "A"; expect("union A", names(), all)
 World.current = "B"; expect("union B", names(), all)
 World.current = "C"; expect("union C", names(), all)
 
--------------------------------------------------------------------- 3: edit propagates in place
+-------------------------------------------------------------------- 3: body edit on A. B's own "Frost" is NEVER touched; the new body arrives beside it under a free name
 World.current = "A"
 for i, m in ipairs(cur().macros) do if m.name == "Frost" then EditMacro(MAX_ACCT + i, "Frost", 1, "/cast Frostbolt(Rank 2)") end end
 edit()
 login("B")
-expect("edit -> B", names(), "Blink=/cast Blink | Charge=/cast Charge | Fire=/cast Fireball | Frost=/cast Frostbolt(Rank 2)")
-expect("edit kept slot count", #cur().macros, 4)
+expect("edit -> B as a new macro, B's Frost untouched", names(), "Blink=/cast Blink | Charge=/cast Charge | Fire=/cast Fireball | Frost 2=/cast Frostbolt(Rank 2) | Frost=/cast Frostbolt")
+login("A")
+expect("A: old Frost body NOT recreated (edited away here)", names():find("Frost=/cast Frostbolt |") == nil and names():find("Frostbolt(Rank 2)", 1, true) ~= nil, true)
 
 -------------------------------------------------------------------- 4: player delete = tombstone here ONLY; others keep it; never recreated here
 World.current = "B"
 playerDelete("Fire"); edit()
-expect("B lost Fire by its own hand", names(), "Blink=/cast Blink | Charge=/cast Charge | Frost=/cast Frostbolt(Rank 2)")
+expect("B lost Fire by its own hand", names():find("Fire=") == nil, true)
 login("B")
-expect("B: Fire NOT recreated", names(), "Blink=/cast Blink | Charge=/cast Charge | Frost=/cast Frostbolt(Rank 2)")
+expect("B: Fire NOT recreated", names():find("Fire=") == nil, true)
 login("C")
 expect("C still has Fire", names():find("Fire=") ~= nil, true)
 login("A")
 expect("A still has Fire", names():find("Fire=") ~= nil, true)
-expect("class set unchanged", NS.db.classes.WARRIOR[NS.MacroKey("Fire", "/cast Fireball")] ~= nil, true)
-expect("B tombstoned", NS.db.chars.B.excluded[NS.MacroKey("Fire", "/cast Fireball")], true)
+expect("class set unchanged", NS.db.classes.WARRIOR[NS.MacroKey("/cast Fireball")] ~= nil, true)
+expect("B tombstoned", NS.db.chars.B.excluded[NS.MacroKey("/cast Fireball")], true)
 
 -------------------------------------------------------------------- 5: THE BUG. rename on one char must propagate, never fork into Name~2
 World.current = "A"
@@ -108,13 +109,40 @@ local chargeCount = 0
 for _, m in ipairs(cur().macros) do if m.body == "/cast Charge" then chargeCount = chargeCount + 1 end end
 expect("exactly one Charge macro on A", chargeCount, 1)
 
--------------------------------------------------------------------- 5b: same body, different name on first sync = ONE macro, never two
 addChar("D", "MD", { { name = "Frosty", icon = 9, body = "/cast Frostbolt(Rank 2)" } })
 login("D")
 local rank2 = 0
 for _, m in ipairs(cur().macros) do if m.body == "/cast Frostbolt(Rank 2)" then rank2 = rank2 + 1 end end
 expect("D: exactly one macro with that body", rank2, 1)
 expect("D: no ~N", names():find("~") == nil, true)
+
+-------------------------------------------------------------------- 5c: THE RULE. player makes a NEW "charge" with a different body: it stays "charge"
+addChar("F", "MF", {})
+login("F")                                               -- F receives the shared "charge"
+expect("F got shared charge", names():find("charge=/cast Charge") ~= nil, true)
+playerDelete("charge")                                  -- player removes it...
+CreateMacro("charge", 5, "/cast Charge\n/startattack", true)  -- ...and makes their OWN "charge"
+edit()
+local function chargeNamesOn()
+	local t = {}
+	for _, m in ipairs(cur().macros) do if m.name:lower():find("^charge") then t[#t + 1] = m.name .. "=" .. m.body:gsub("\n", "\\n") end end
+	table.sort(t); return table.concat(t, " | ")
+end
+expect("F: player's macro is still called charge, and it is the only charge", chargeNamesOn(), "charge=/cast Charge\\n/startattack")
+login("F")
+expect("F: still just that one charge after relogin (old body tombstoned here)", chargeNamesOn(), "charge=/cast Charge\\n/startattack")
+-- the new body is shared; on A (which has the old "charge") it must arrive under a different name, A's own charge untouched
+login("A")
+local aOld, aNew = false, false
+for _, m in ipairs(cur().macros) do
+	if m.name == "charge" and m.body == "/cast Charge" then aOld = true end
+	if m.body == "/cast Charge\n/startattack" then aNew = (m.name ~= "charge") end
+end
+expect("A: own charge untouched", aOld, true)
+expect("A: incoming different-body charge got a free name", aNew, true)
+tilde = false
+for _, ch in pairs(World.chars) do for _, m in ipairs(ch.macros) do if m.name:find("~") then tilde = true end end end
+expect("still NO ~N anywhere", tilde, false)
 
 -------------------------------------------------------------------- 6: overflow fills what fits and warns
 local big = {}
