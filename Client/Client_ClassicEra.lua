@@ -23,4 +23,16 @@ NS.ClientFlavours.classic_era = {
 	MaxCharacterMacros = function()
 		return MAX_CHARACTER_MACROS or 18
 	end,
+
+	MaxActionSlot = function()
+		return 120
+	end,
+
+	ActionSlotMacroName = function(slot)
+		return NS.Client.ActionSlotMacroNameShared(slot)
+	end,
+
+	ReadSpellbook = function()
+		return NS.Client.ReadSpellbookClassic()
+	end,
 }

@@ -7,6 +7,11 @@ local function SelectFlavour()
 	if WOW_PROJECT_ID ~= nil and WOW_PROJECT_CLASSIC ~= nil and WOW_PROJECT_ID == WOW_PROJECT_CLASSIC then
 		return "classic_era"
 	end
+	-- Retail (Mainline) exposes C_SpellBook; Forever runs Mainline UI code but
+	-- keeps the Classic spellbook API, so the namespace is the discriminator.
+	if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines then
+		return "retail"
+	end
 	return "forever"
 end
 

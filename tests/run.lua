@@ -35,7 +35,7 @@ function CreateFrame() return { RegisterEvent = function() end, SetScript = func
 -------------------------------------------------------------------- load addon
 local NS = {}
 local function load(file) local f = assert(loadfile(file)); f("VelocityMacroSync", NS) end
-for _, f in ipairs { "Core/Util.lua", "Client/Client.lua", "Client/Client_ClassicEra.lua", "Client/Client_Forever.lua", "Client/Client_Select.lua", "Core/Macros.lua", "Core/Merge.lua", "Core/Sync.lua" } do load(f) end
+for _, f in ipairs { "Core/Util.lua", "Client/Client.lua", "Client/Client_ClassicEra.lua", "Client/Client_Forever.lua", "Client/Client_Retail.lua", "Client/Client_Select.lua", "Core/Macros.lua", "Core/Merge.lua", "Core/Sync.lua" } do load(f) end
 NS.db = { classes = {}, chars = {}, debug = false }
 assert(NS.Macros.Delete == nil, "Macros.Delete must not exist")
 

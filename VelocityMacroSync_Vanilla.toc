@@ -13,6 +13,7 @@ Core\Util.lua
 Client\Client.lua
 Client\Client_ClassicEra.lua
 Client\Client_Forever.lua
+Client\Client_Retail.lua
 Client\Client_Select.lua
 
 Core\Macros.lua

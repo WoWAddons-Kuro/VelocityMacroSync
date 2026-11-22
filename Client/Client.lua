@@ -17,6 +17,9 @@ Client.INTERFACE = {
 	"PlayerClass",        -- () -> classFile token, e.g. "MAGE" (locale independent)
 	"MaxAccountMacros",   -- () -> number of account-wide (General) slots
 	"MaxCharacterMacros", -- () -> number of character-specific slots
+	"MaxActionSlot",      -- () -> highest action-bar slot number (120 on Classic clients)
+	"ActionSlotMacroName",-- (slot) -> macro name if the slot holds a macro, else nil
+	"ReadSpellbook",      -- () -> { spellName, ... } for the player's CLASS tabs only (General tab skipped, ranks stripped)
 }
 
 -- Shared across flavours: the macro API itself has the same shape on every
@@ -36,6 +39,56 @@ end
 
 function Client.EditMacro(index, name, icon, body)
 	return EditMacro(index, name, icon, body)
+end
+
+function Client.GetMacroIndexByName(name)
+	return GetMacroIndexByName(name)
+end
+
+-- Put macro `index` into action slot `slot`. Blocked in combat (caller gates).
+function Client.PlaceMacroInSlot(index, slot)
+	PickupMacro(index)
+	PlaceAction(slot)
+	ClearCursor()
+end
+
+-- Strip "(Rank 3)" / "(Passive)" style suffixes and surrounding whitespace.
+function Client.StripRank(name)
+	if not name then return nil end
+	name = name:gsub("%s*%b()%s*$", "")
+	return (name:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+-- Shared between the Classic-API flavours (Era, Forever): walk the spellbook
+-- tabs, skip tab 1 (General: racials, professions, shared abilities), return
+-- the de-ranked, de-duplicated spell names of the player's class tabs.
+function Client.ReadSpellbookClassic()
+	local names, seen = {}, {}
+	local numTabs = GetNumSpellTabs and GetNumSpellTabs() or 0
+	for tab = 2, numTabs do
+		local _, _, offset, numSpells = GetSpellTabInfo(tab)
+		for i = (offset or 0) + 1, (offset or 0) + (numSpells or 0) do
+			local name = GetSpellBookItemName(i, BOOKTYPE_SPELL or "spell")
+			name = Client.StripRank(name)
+			if name and name ~= "" and not seen[name] then
+				seen[name] = true
+				names[#names + 1] = name
+			end
+		end
+	end
+	return names
+end
+
+-- Shared action-slot read: macro name if the slot holds a macro, else nil.
+-- GetActionText is the macro NAME on every client; GetActionInfo's id differs
+-- between clients and is deliberately not used.
+function Client.ActionSlotMacroNameShared(slot)
+	if HasAction and not HasAction(slot) then return nil end
+	local actionType = GetActionInfo(slot)
+	if actionType ~= "macro" then return nil end
+	local text = GetActionText(slot)
+	if text and text ~= "" then return text end
+	return nil
 end
 
 -- Deliberately no DeleteMacro wrapper: this addon never deletes a macro.

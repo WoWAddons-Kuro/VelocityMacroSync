@@ -29,4 +29,18 @@ NS.ClientFlavours.forever = {
 	MaxCharacterMacros = function()
 		return MAX_CHARACTER_MACROS or 18
 	end,
+
+	MaxActionSlot = function()
+		return 120
+	end,
+
+	ActionSlotMacroName = function(slot)
+		return NS.Client.ActionSlotMacroNameShared(slot)
+	end,
+
+	-- Forever runs Mainline UI code on a Classic-era data set; the spellbook
+	-- API is the Classic shape. Verify in M6 (see SPEC-ClassMacroMigration).
+	ReadSpellbook = function()
+		return NS.Client.ReadSpellbookClassic()
+	end,
 }
