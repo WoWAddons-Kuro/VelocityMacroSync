@@ -7,6 +7,7 @@ local W = { general = {}, char = {}, slots = {}, class = "WARRIOR", spells = {},
 
 MAX_ACCOUNT_MACROS, MAX_CHARACTER_MACROS = MAX_ACCT, MAX_CHAR
 WOW_PROJECT_ID, WOW_PROJECT_CLASSIC = 2, 2
+function GetBuildInfo() return "1.15.9", "70576", "Oct 22 2026", 11509 end
 local function sortGeneral() table.sort(W.general, function(a, b) return a.name < b.name end) end
 function GetNumMacros() return #W.general, #W.char end
 function GetMacroInfo(i)

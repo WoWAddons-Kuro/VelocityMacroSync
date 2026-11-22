@@ -9,6 +9,7 @@ local function cur() return World.chars[World.current] end
 
 MAX_ACCOUNT_MACROS, MAX_CHARACTER_MACROS = MAX_ACCT, MAX_CHAR
 WOW_PROJECT_ID, WOW_PROJECT_CLASSIC = 2, 2
+function GetBuildInfo() return "1.15.9", "70576", "Oct 22 2026", 11509 end
 function GetNumMacros() return 0, #cur().macros end
 function GetMacroInfo(i) local m = cur().macros[i - MAX_ACCT]; if m then return m.name, m.icon, m.body end end
 function CreateMacro(name, icon, body, perChar)

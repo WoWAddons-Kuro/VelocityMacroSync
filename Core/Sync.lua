@@ -190,7 +190,7 @@ function Sync.Status()
 	local classSet, class = ClassSet()
 	local rec = CharRecord()
 	local localList = Macros.ReadCharacter()
-	NS.Print(string.format("%s (%s) on %s client", rec.name, class, Client.flavour))
+	NS.Print(string.format("%s (%s) on %s client [%s]", rec.name, class, Client.flavour, Client.buildInfo or "?"))
 	NS.Print(string.format("character page: %d/%d used, class set: %d macros, excluded here: %d, snapshot: %s, synced this session: %s",
 		#localList, Client.MaxCharacterMacros(), NS.CountTable(classSet), NS.CountTable(rec.excluded),
 		rec.snapshot and NS.CountTable(rec.snapshot) .. " entries" or "none (first sync pending)",
