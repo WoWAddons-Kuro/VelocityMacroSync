@@ -76,15 +76,20 @@ local function CreateOptions()
 	-- Top card: name + description.
 	local top = Box(content)
 	top:SetPoint("TOPLEFT", 16, -16)
+	local ICON = 64
+	local logo = top:CreateTexture(nil, "ARTWORK")
+	logo:SetSize(ICON, ICON)
+	logo:SetPoint("TOPLEFT", PAD, -PAD)
+	logo:SetTexture("Interface\\AddOns\\VelocityMacroSync\\Assets\\VelocityMacroSync_Icon.tga")
 	local title = top:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-	title:SetPoint("TOPLEFT", PAD, -PAD); title:SetText("Velocity Macro Sync")
+	title:SetPoint("TOPLEFT", logo, "TOPRIGHT", PAD, -2); title:SetText("Velocity Macro Sync")
 	local sub = top:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-	sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6); sub:SetWidth(BOX_W - 2 * PAD); sub:SetJustifyH("LEFT")
+	sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6); sub:SetWidth(BOX_W - 3 * PAD - ICON); sub:SetJustifyH("LEFT")
 	sub:SetText("Keeps the Character Specific Macros tab identical across every character of the same class. " ..
 		"Adds, edits and deletes you make on one character reach the others at their next login; edits are applied " ..
 		"in place so macros stay on your action bars. Same-name clashes on first sync are kept as Name~2. " ..
 		"Commands: /velocitymacrosync status, sync, list, reset, resetclass.")
-	top:SetHeight(PAD + title:GetStringHeight() + 6 + sub:GetStringHeight() + PAD)
+	top:SetHeight(PAD + math.max(ICON, 2 + title:GetStringHeight() + 6 + sub:GetStringHeight()) + PAD)
 
 	-- Class card.
 	local card = Box(content)

@@ -9,3 +9,6 @@ ignore:
 
   - tests
 
+  - Assets/VelocityMacroSync_AppIcon.png
+  - Assets/VelocityMacroSync_AppIcon.jpg
+  - Assets/VelocityMacroSync_Icon_256.png
