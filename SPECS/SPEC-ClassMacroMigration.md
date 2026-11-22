@@ -1,19 +1,25 @@
 # SPEC-ClassMacroMigration: Automatic General → Class Macro Migration
 
 - **Status:** Draft
-- **Addon:** VelocityClassMacroSync
-- **Clients:** Classic Era, WoW Forever, Retail
+- **Addon:** VelocityMacroSync
+- **Clients:** Classic Era, WoW Forever (shipped); Retail (client flavour written blind, no TOC until testable)
+- **Product spec:** `00_VelocityMacroSync.md` — its HARD RULES apply here unchanged
 - **References:** API links in [External References](#external-references)
 
-- [ ] Per-client API verification (see [Verification Checklist](#verification-checklist))
-- [ ] Class spell sets built from spellbooks
-- [ ] Classifier: identify general macros that belong to one class
-- [ ] Migration on the current character (create, re-place bars, stub)
-- [ ] Login remap sweep on other characters of the class
+This spec was drafted before the sync core existed and has been adapted to it. Where the two differ, the
+code direction in `00_VelocityMacroSync.md` wins: content-hash identity, append-only class set, no delete
+path, per-client files under `Client\`.
+
+- [ ] M1 Client interface additions: `ActionSlots`, `ReadSpellbook` in `Client.lua`; impl in `Client_ClassicEra`, `Client_Forever`, new `Client_Retail`
+- [ ] M2 `Core/SpellSets.lua`: build `db.classSpells[CLASS]` from the spellbook
+- [ ] M3 `Core/Classify.lua`: extract spell names, apply the rules (pure, tested offline)
+- [ ] M4 `Core/Migrate.lua`: bar scan → classify → create class macro → re-place slots → stub
+- [ ] M5 Remap sweep on login, after `Sync.Run`
+- [ ] M6 Per-client verification in game (see [Verification Checklist](#verification-checklist))
 
 ## Overview
 
-VelocityClassMacroSync keeps the character-specific macro tab identical across all characters of the same class. This spec covers one feature of it: automatically moving macros that contain class-specific spells out of the **General** tab and into the character tab, where the class sync then carries them to every character of that class.
+VelocityMacroSync keeps the character-specific macro tab identical across all characters of the same class. This spec covers one feature of it: automatically moving macros that contain class-specific spells out of the **General** tab and into the character tab, where the class sync then carries them to every character of that class.
 
 The hard constraint is action bars. A general macro is shared by every character on the account, and a bar button holds a reference to the macro, not its text. Deleting a general macro makes the buttons that reference it on other characters silently disappear, with nothing left to identify what was there. So migration never deletes, and nothing else in the addon does either (product rule 1). It converts the general macro into a **stub** in place by renaming it and rewriting its body with `EditMacro`, which keeps every button reference alive. Each other character of the class swaps its stub buttons for the class macro the next time it logs in.
 
@@ -27,7 +33,7 @@ Stubs are renamed so they sort to the end of the General tab, forming a block of
 |---|---|
 | General macro | Macro in the account-wide tab. Indices `1..MAX_ACCOUNT_MACROS`. |
 | Character macro | Macro in the per-character tab. Indices above `MAX_ACCOUNT_MACROS`. |
-| Class macro | A character macro held in the class store and synced to all characters of a class. Has a stable ID. |
+| Class macro | A character macro held in the class set (`db.classes[CLASS]`) and synced to all characters of a class. Identified by the **content hash of its body** (`NS.MacroKey(body)`, FNV-1a 32-bit hex). |
 | Stub | A general macro that has been migrated: renamed, re-iconed, body replaced by a marker line. |
 | Action slot | A bar button position (`1..120` on Classic clients, more on Retail). Never shifts. |
 | Macro index | A macro's position in the macro list. Shifts on create, rename and delete, because the list is sorted by name. |
@@ -67,6 +73,12 @@ The feature is event-driven; nothing polls.
 
 The addon's own macro writes fire `UPDATE_MACROS`; a re-entrancy guard suppresses handling while a write batch is in progress.
 
+### Opt-out: `#nosync`
+
+A general macro whose body contains a line that is exactly `#nosync` (case-insensitive, surrounding
+whitespace ignored) is never migrated, whatever else it contains. The line is a macro comment so the
+client ignores it. Checked before classification; such a macro is skipped silently.
+
 ### Class Spell Sets
 
 The classifier needs to know which spell names belong to which class. Each character contributes its own spellbook to an account-wide table, so no spell data ships with the addon and the same code works on all three clients.
@@ -78,7 +90,7 @@ The classifier needs to know which spell names belong to which class. Each chara
 
 ```lua
 -- pseudocode
-VCMS_DB.classSpells[classToken][spellName] = true
+VelocityMacroSyncDB.classSpells[classToken][spellName] = true
 ```
 
 The set only contains spells some character of that class has learned. The consequence is conservative: an unknown spell prevents classification, it never causes a wrong one.
@@ -112,22 +124,24 @@ Macros that fail any rule are left untouched in the General tab.
 For a general macro `G` (name `N`, icon `I`, body `B`) classified as the current class:
 
 1. **Find or create the class macro.**
-   - If a character macro with the same name and body already exists, reuse it.
-   - Otherwise `CreateMacro(N, I, B, true)`. Creating a character macro does not renumber general macros.
+   - `hash = NS.MacroKey(B)`. If `db.classes[CLASS][hash]` exists the class already has this macro; if it
+     is on this character's page, reuse it, otherwise the next `Sync.Run` will create it.
+   - Otherwise `CreateMacro(N, I, B, true)` and let `Sync.Run` add it to the class set (it is a new body
+     on the page, which is exactly the `classAdd` path). Creating a character macro does not renumber general macros.
    - If the character tab is full (`MAX_CHARACTER_MACROS`), skip this macro, leave `G` untouched and print a message. Nothing is ever dropped silently.
-   - Register it in the class store and obtain its stable class macro ID.
+   - If `N` is already held on the page by a different body, product rule 5 applies: the migrated copy is created as `N 2`.
 2. **Re-place this character's bar buttons.** For every action slot holding `G`: pick up the class macro, place it in the slot, clear the cursor.
 3. **Convert `G` to a stub** with `EditMacro` (see below). `EditMacro` changes the macro in place, so references to it from other characters' bars survive. The rename re-sorts the list; use the index `EditMacro` returns.
 
 ```lua
 -- pseudocode
-local classIndex = FindOrCreateClassMacro(N, I, B)
+local classIndex = FindOrCreateClassMacro(N, I, B)   -- resolves by NS.MacroKey(B)
 for slot = 1, MAX_ACTION_SLOT do
     if SlotHoldsGeneralMacro(slot, G) then
         PickupMacro(classIndex); PlaceAction(slot); ClearCursor()
     end
 end
-EditMacro(ResolveIndex(G), NextStubName(), STUB_ICON, StubBody(classToken, classMacroId, N))
+EditMacro(ResolveIndex(G), NextStubName(), STUB_ICON, StubBody(classToken, NS.MacroKey(B), N))
 ```
 
 ### Stub Format
@@ -144,25 +158,25 @@ EditMacro(ResolveIndex(G), NextStubName(), STUB_ICON, StubBody(classToken, class
 **Body:** a single comment line.
 
 ```
-#VelocityClassMacroSync-migrated v1 <CLASS> <classMacroId> <original macro name>
+#VelocityMacroSync-migrated v1 <CLASS> <bodyHash> <original macro name>
 ```
 
 | Field | Meaning |
 |---|---|
 | `v1` | Payload format version. |
 | `<CLASS>` | Class token, e.g. `MAGE`. |
-| `<classMacroId>` | Stable ID of the class macro in the class store. No spaces. |
+| `<bodyHash>` | `NS.MacroKey(originalBody)`: 8 hex chars. Looks the class macro up in `db.classes[CLASS]`. |
 | rest of line | The original macro name. Placed last because names may contain spaces and punctuation. |
 
 ```lua
 -- pseudocode; note the escaped hyphen
-local class, id, name =
-    body:match("^#VelocityClassMacroSync%-migrated v1 (%u+) (%S+) (.+)")
+local class, hash, name =
+    body:match("^#VelocityMacroSync%-migrated v1 (%u+) (%x+) (.+)")
 ```
 
-Limits: macro names are at most 16 characters and bodies at most 255. The marker prefix is 32 characters, so the full line fits with a wide margin.
+Limits: macro names are at most 16 characters and bodies at most 255. The marker prefix is 27 characters, so the full line fits with a wide margin.
 
-**The stub is the migration record.** It carries everything needed to remap, so no separate migration table is required in SavedVariables. If the class store is ever lost and the ID no longer resolves, the original name in the payload is the fallback for finding the class macro.
+**The stub is the migration record.** It carries everything needed to remap, so no separate migration table is required in SavedVariables. If the class set is ever wiped (`/velocitymacrosync reset`) and the hash no longer resolves, the original name in the payload is the fallback for finding the class macro on the page.
 
 ### Login Remap Sweep
 
@@ -171,7 +185,7 @@ Runs on every login after the class sync merge, so the character already has the
 1. For each action slot whose action type is `macro`, read the button's macro name with `GetActionText(slot)`.
 2. If the name matches `^zz%d+$`, resolve the general macro by that name (stub names are unique) and parse its body.
 3. If the payload's class equals the logged-in character's class:
-   - Resolve the class macro: by ID through the class store, falling back to the original name.
+   - Resolve the class macro on this page: by body hash (`NS.MacroKey` of each page macro's body), falling back to the original name.
    - Pick up the class macro, place it in the slot, clear the cursor.
 4. Stubs for other classes are ignored.
 
@@ -195,21 +209,42 @@ If the user wants the general slots back they delete the stubs by hand, knowing 
 | Same class, addon disabled | Button shows the stub and does nothing until the addon runs. |
 | Different class | Cannot happen for a correctly classified macro: every spell in it belongs to one class, so no other class could have been using it. A stub of another class on a bar is therefore only ever the result of the user placing the general macro there by mistake; it stays inert and is not remapped. |
 | Character tab full at migration time | Macro not migrated; message printed. |
-| Class macro with same name, different body already exists | Both exist in the character tab (duplicate names are allowed); the migrated one is tracked by ID. |
+| Class macro with same name, different body already exists | Product rule 5: the player's existing macro keeps its name; the migrated copy is created as `Name 2`. Tracked by body hash. |
+| General macro body has a `#nosync` line | Never migrated. |
 
 ### Saved Data
 
-Account-wide SavedVariables, per client install. Era, Forever and Retail each keep their own data, which matches their separate macro storage.
+Account-wide SavedVariables (`VelocityMacroSyncDB`), per client install. Era, Forever and Retail each keep their own data, which matches their separate macro storage.
 
 ```lua
--- pseudocode
-VCMS_DB = {
-    classSpells = { MAGE = { ["Frostbolt"] = true, ... }, ... },
-    classMacros = { MAGE = { [id] = { name=, icon=, body= }, ... }, ... },  -- owned by the sync core
-}
+-- additions to the layout in 00_VelocityMacroSync.md
+VelocityMacroSyncDB.classSpells = { MAGE = { ["Frostbolt"] = true, ... }, ... }
+-- classes[CLASS][hash] = { name, icon, body, seq }   already exists; owned by Core/Sync.lua
 ```
 
 SavedVariables are written only at logout or `/reload`.
+
+### Client abstraction (follows `Client\` pattern from the product spec)
+
+Everything flavour-specific lives in the per-client files; `Core\*` never branches on client. Additions to
+`Client.INTERFACE`:
+
+| Method | Returns | Notes |
+|---|---|---|
+| `MaxActionSlot()` | number | 120 on Classic clients; higher on Retail |
+| `ActionSlotMacroName(slot)` | name or nil | `GetActionInfo(slot)` type `"macro"` → `GetActionText(slot)` |
+| `ReadSpellbook()` | `{ name, ... }` | Player's class spells, General tab skipped, ranks stripped |
+
+| File | Spellbook source |
+|---|---|
+| `Client_ClassicEra.lua` | `GetNumSpellTabs`, `GetSpellTabInfo`, `GetSpellBookItemName(i, BOOKTYPE_SPELL)` |
+| `Client_Forever.lua` | same Classic shape (Forever is Mainline UI code on a Classic-era data set; verify in M6) |
+| `Client_Retail.lua` | `C_SpellBook.GetNumSpellBookSkillLines`, `GetSpellBookSkillLineInfo`, `GetSpellBookItemName(i, Enum.SpellBookSpellBank.Player)`. **Written blind**; no Retail TOC ships until it is tested. |
+
+`Client_Select.lua` gains a `retail` branch (`WOW_PROJECT_ID == WOW_PROJECT_MAINLINE`). Shared wrappers
+(`PickupMacro`, `PlaceAction`, `ClearCursor`, `GetMacroIndexByName`) go in `Client.lua` like the macro
+wrappers already there. Pure logic (`Classify`, stub format, remap decision) is flavour-free and testable
+under `tests\run.lua` with the fake API extended for action slots and a spellbook.
 
 ## API Surface
 
@@ -263,10 +298,9 @@ To confirm on each client before relying on it:
 
 ## Open Questions
 
-- **Items in class macros.** A macro that casts a class spell and also uses a trinket or consumable is currently left in General because the item name is unrecognized. Should `/use` item names be ignored by the classifier instead of blocking?
+- **Items in class macros.** `/use` is the macro command for items (`/use Trinket`, `/use 13`, `/use Healing Potion`). Item names are not in any spellbook, so they are "unrecognized" and block migration: a "Charge + trinket" macro stays in General. Decision pending: keep blocking (safe) or ignore `/use` lines (migrates more, risk is nil since the class spell still has to be present).
 - **Migration during play.** Migration runs at login. Should it also run when a general macro is created or edited mid-session, or would moving a macro the player just saved be surprising?
 - **Stub feedback.** The stub body is a comment only, so pressing an un-remapped button does nothing. Add a second line that prints where the macro went?
-- **Opt-out.** A way to mark a general macro as "never migrate" (for example a marker line in its body).
 
 ## Alternatives Considered
 
