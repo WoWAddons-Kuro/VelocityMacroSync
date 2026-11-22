@@ -38,6 +38,4 @@ function Client.EditMacro(index, name, icon, body)
 	return EditMacro(index, name, icon, body)
 end
 
-function Client.DeleteMacro(index)
-	return DeleteMacro(index)
-end
+-- Deliberately no DeleteMacro wrapper: this addon never deletes a macro.

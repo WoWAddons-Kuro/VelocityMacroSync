@@ -1,116 +1,127 @@
--- Velocity Macro Sync: the three-way merge. Pure logic, no game API calls, so it
--- can be reasoned about (and unit-tested) in isolation.
+-- Velocity Macro Sync: the merge. Pure logic, no game API calls.
+--
+-- ============================  HARD RULES  ============================
+--  1. THE ADDON NEVER DELETES A MACRO FROM THE CHARACTER PAGE. There is no
+--     delete path anywhere in this addon; DeleteMacro is not even wrapped.
+--  2. THE CLASS SET IS APPEND-ONLY. Nothing is ever removed from it.
+--  3. When the PLAYER deletes a macro from their page, that character records
+--     a TOMBSTONE for it: "not on this character's page by choice". The macro
+--     stays in the class set and still goes to every other character.
+-- =======================================================================
 --
 -- Inputs
---   snapshot : { [key] = icon }       what THIS character had after its last sync (nil = never synced)
---   localList: { {index,name,icon,body}, ... }  what the character tab holds right now
---   classSet : { [key] = {name,icon,body} }     the shared set for this class
+--   snapshot : { [key] = icon }   what THIS character had after its last sync (nil = never synced)
+--   excluded : { [key] = true }   tombstones for THIS character
+--   localList: { {index,name,icon,body}, ... }   what the character page holds right now
+--   classSet : { [key] = {name,icon,body} }      the shared set for this class
+-- key = NS.MacroKey(name, body).
 --
--- key = NS.MacroKey(name, body). An edit therefore shows up as "old key gone,
--- new key appeared"; the plan pairs those by name so they become an in-place
--- EditMacro (keeps action-bar placement) instead of delete + create.
---
--- Decision table for a key K (S = in snapshot, L = local, C = class):
---    L  C  S   meaning                               action
---    1  1  *   in sync                                none (icon reconciled separately)
---    1  0  1   deleted on another character          delete locally
---    1  0  0   new here                              add to class
---    0  1  1   deleted here                          remove from class
---    0  1  0   new elsewhere                         create locally
---
--- First sync (no snapshot) degenerates to a plain union, which is the
--- "3 mages, 3 macros -> all have 3" behaviour. Same name + different body on
--- first sync: keep both; the incoming one is renamed ("Name~2").
+-- Plan:
+--   classAdd    = { entry, ... }                              add to class set
+--   localCreate = { entry, ... }                              CreateMacro on this page
+--   localEdit   = { {index=,name=,icon=,body=,oldName=}, ...} EditMacro in place (icon or body refresh, rename on fork)
+--   tombstone   = { key, ... }                                player deleted these here since last sync
 local ADDON, NS = ...
 
 local Merge = {}
 NS.Merge = Merge
 
--- Returns a plan:
---   classAdd    = { entry, ... }                      put into class set
---   classRemove = { key, ... }                        drop from class set
---   localCreate = { entry, ... }                      CreateMacro on this character
---   localDelete = { {index=, name=, body=}, ... }     DeleteMacro on this character
---   localEdit   = { {index=, name=, icon=, body=, oldName=}, ... }  EditMacro in place
---   classIcon   = { {key=, icon=}, ... }              icon changed locally -> class
-function Merge.Plan(snapshot, localList, classSet)
-	local plan = { classAdd = {}, classRemove = {}, localCreate = {}, localDelete = {}, localEdit = {}, classIcon = {} }
+function Merge.Plan(snapshot, excluded, localList, classSet)
+	local plan = { classAdd = {}, localCreate = {}, localEdit = {}, tombstone = {} }
 	local firstSync = (snapshot == nil)
 	snapshot = snapshot or {}
+	excluded = excluded or {}
 
 	local localSet = NS.Macros.ToSet(localList)
-	local localNames = NS.Macros.NamesInUse(localList)
+	local localByName = {}
+	for key, m in pairs(localSet) do localByName[m.name] = key end
+	-- Newest class entry per name (the set is append-only, so an edit leaves the
+	-- old body behind; `seq` says which one is current).
+	local classByName = {}
+	for key, e in pairs(classSet) do
+		local cur = classByName[e.name]
+		if not cur or (e.seq or 0) > (classSet[cur].seq or 0) then classByName[e.name] = key end
+	end
 
-	-- Names in the class set, for first-sync conflict detection.
-	local classNames = {}
-	for key, e in pairs(classSet) do classNames[e.name] = key end
+	local taken = {}
+	for n in pairs(localByName) do taken[n] = true end
+	for n in pairs(classByName) do taken[n] = true end
 
-	local deletes, creates = {}, {}
+	-- Tombstones: was in the snapshot, is no longer on the page -> the player
+	-- removed it here. Record, never recreate here, never touch the class set.
+	for key in pairs(snapshot) do
+		if not localSet[key] and not excluded[key] then
+			plan.tombstone[#plan.tombstone + 1] = key
+			excluded[key] = true   -- effective immediately for the passes below
+		end
+	end
 
-	-- Pass 1: everything local.
+	local handledClassKey = {}
+
+	-- Pass 1: every macro on the page.
 	for key, m in pairs(localSet) do
 		if classSet[key] then
-			-- In sync. Reconcile icon: local changed since snapshot -> class; else class -> local.
-			local cIcon = classSet[key].icon
-			if m.icon ~= cIcon then
-				if snapshot[key] ~= nil and m.icon ~= snapshot[key] then
-					plan.classIcon[#plan.classIcon + 1] = { key = key, icon = m.icon }
-				elseif cIcon ~= nil then
-					plan.localEdit[#plan.localEdit + 1] = { index = m.index, name = m.name, icon = cIcon, body = m.body, oldName = m.name }
+			handledClassKey[key] = true
+			local newest = classByName[m.name]
+			if newest ~= key and not excluded[newest] then
+				-- A newer body for this name was shared elsewhere -> update in place; retire ours here.
+				local c = classSet[newest]
+				handledClassKey[newest] = true
+				plan.localEdit[#plan.localEdit + 1] = { index = m.index, name = c.name, icon = c.icon, body = c.body, oldName = m.name }
+				if not excluded[key] then plan.tombstone[#plan.tombstone + 1] = key; excluded[key] = true end
+			else
+				-- Same name+body; reconcile icon only.
+				local cIcon = classSet[key].icon
+				if m.icon ~= cIcon then
+					if snapshot[key] ~= nil and m.icon ~= snapshot[key] then
+						classSet[key].icon = m.icon
+					elseif cIcon ~= nil then
+						plan.localEdit[#plan.localEdit + 1] = { index = m.index, name = m.name, icon = cIcon, body = m.body, oldName = m.name }
+					end
 				end
 			end
-		elseif snapshot[key] ~= nil then
-			deletes[#deletes + 1] = { index = m.index, name = m.name, body = m.body }
 		else
-			-- New here. On first sync a same-name different-body macro already in
-			-- the class set means "keep both": rename ours before it joins the set.
-			local entry = { name = m.name, icon = m.icon, body = m.body }
-			if firstSync and classNames[m.name] and classNames[m.name] ~= key then
-				local taken = {}
-				for n in pairs(classNames) do taken[n] = true end
-				for n in pairs(localNames) do taken[n] = true end
-				entry.name = NS.UniqueName(m.name, taken)
-				plan.localEdit[#plan.localEdit + 1] = { index = m.index, name = entry.name, icon = m.icon, body = m.body, oldName = m.name }
-				localNames[entry.name] = true
-			end
-			plan.classAdd[#plan.classAdd + 1] = entry
-			classNames[entry.name] = NS.MacroKey(entry.name, entry.body)
-		end
-	end
-
-	-- Pass 2: everything in the class set that is not local.
-	for key, e in pairs(classSet) do
-		if not localSet[key] then
-			if snapshot[key] ~= nil then
-				plan.classRemove[#plan.classRemove + 1] = key
+			local cKey = classByName[m.name]
+			if not cKey then
+				-- New macro here -> share it.
+				plan.classAdd[#plan.classAdd + 1] = { name = m.name, icon = m.icon, body = m.body }
 			else
-				creates[#creates + 1] = { name = e.name, icon = e.icon, body = e.body }
+				-- Same name, different body.
+				local c = classSet[cKey]
+				handledClassKey[cKey] = true
+				if snapshot[key] ~= nil then
+					-- Our copy is the one we synced earlier; the class copy is a newer edit from elsewhere.
+					plan.localEdit[#plan.localEdit + 1] = { index = m.index, name = c.name, icon = c.icon, body = c.body, oldName = m.name }
+				elseif snapshot[cKey] ~= nil then
+					-- The class copy is what we synced earlier; ours is a newer edit made here. Share the new
+					-- body (append-only: old entry stays, tombstoned for us so it is not recreated here).
+					plan.classAdd[#plan.classAdd + 1] = { name = m.name, icon = m.icon, body = m.body }
+					if not excluded[cKey] then plan.tombstone[#plan.tombstone + 1] = cKey; excluded[cKey] = true end
+				else
+					-- First sync, genuine fork: keep both. Rename ours to Name~2, share it, take theirs.
+					local newName = NS.UniqueName(m.name, taken)
+					taken[newName] = true
+					plan.localEdit[#plan.localEdit + 1] = { index = m.index, name = newName, icon = m.icon, body = m.body, oldName = m.name }
+					plan.classAdd[#plan.classAdd + 1] = { name = newName, icon = m.icon, body = m.body }
+					if not excluded[cKey] then
+						plan.localCreate[#plan.localCreate + 1] = { name = c.name, icon = c.icon, body = c.body }
+					end
+				end
 			end
 		end
 	end
 
-	-- Pair delete+create with the same name into an in-place edit.
-	for _, c in ipairs(creates) do
-		local paired = false
-		for i, d in ipairs(deletes) do
-			if d.name == c.name then
-				plan.localEdit[#plan.localEdit + 1] = { index = d.index, name = c.name, icon = c.icon, body = c.body, oldName = d.name }
-				table.remove(deletes, i)
-				paired = true
-				break
-			end
+	-- Pass 2: class entries not on the page and not tombstoned here -> create.
+	for key, e in pairs(classSet) do
+		if not handledClassKey[key] and not excluded[key] and not localByName[e.name] then
+			plan.localCreate[#plan.localCreate + 1] = { name = e.name, icon = e.icon, body = e.body }
 		end
-		if not paired then plan.localCreate[#plan.localCreate + 1] = c end
 	end
-	for _, d in ipairs(deletes) do plan.localDelete[#plan.localDelete + 1] = d end
 
-	-- Deletes must run highest index first so earlier indices do not shift.
-	table.sort(plan.localDelete, function(a, b) return a.index > b.index end)
-
+	table.sort(plan.localCreate, function(a, b) return a.name < b.name end)
 	return plan
 end
 
 function Merge.IsEmpty(plan)
-	return #plan.classAdd == 0 and #plan.classRemove == 0 and #plan.localCreate == 0
-		and #plan.localDelete == 0 and #plan.localEdit == 0 and #plan.classIcon == 0
+	return #plan.classAdd == 0 and #plan.localCreate == 0 and #plan.localEdit == 0 and #plan.tombstone == 0
 end

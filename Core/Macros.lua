@@ -61,8 +61,4 @@ function Macros.Edit(index, name, icon, body)
 	return true
 end
 
-function Macros.Delete(index)
-	local ok, err = pcall(Client.DeleteMacro, index)
-	if not ok then NS.Warn("DeleteMacro failed at " .. index .. ": " .. tostring(err)) return false end
-	return true
-end
+-- There is deliberately NO Macros.Delete. The addon never deletes a macro; only the player does.
