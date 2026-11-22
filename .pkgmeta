@@ -2,7 +2,7 @@ package-as: VelocityMacroSync
 
 ignore:
   - README.md
-  - SPEC.md
+  - SPECS
   - .github
   - .gitignore
   - .pkgmeta

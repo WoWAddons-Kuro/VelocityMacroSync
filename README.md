@@ -28,4 +28,4 @@ third — each change reaches the rest the next time they log in. Nothing to con
   have their own (the spells differ anyway).
 - Macros are never written while in combat; the sync waits for combat to end.
 
-Design details: [SPEC.md](SPEC.md). Licence: MIT.
+Design details: [SPECS/00_VelocityMacroSync.md](SPECS/00_VelocityMacroSync.md). Licence: MIT.
