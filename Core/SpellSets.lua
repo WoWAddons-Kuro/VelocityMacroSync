@@ -17,19 +17,29 @@ NS.SpellSets = SpellSets
 
 -- Re-read this character's spellbook into its class entry. Returns how many
 -- names were new to the set.
+SpellSets.lastResult = "never called"
 function SpellSets.Refresh()
-	if not NS.db then return 0 end
+	if not NS.db then SpellSets.lastResult = "NS.db not ready"; return 0 end
 	NS.db.classSpells = NS.db.classSpells or {}
 	local class = Client.PlayerClass()
-	if not class then return 0 end
+	if not class then SpellSets.lastResult = "no class"; return 0 end
 	local set = NS.db.classSpells[class] or {}
 	NS.db.classSpells[class] = set
 	local added = 0
-	for _, name in ipairs(Client.ReadSpellbook() or {}) do
+	local names = Client.ReadSpellbook() or {}
+	for _, name in ipairs(names) do
 		if not set[name] then set[name] = true; added = added + 1 end
 	end
+	SpellSets.lastResult = string.format("read %d names via %s", #names, tostring(Client.spellbookSource))
 	if added > 0 then NS.Debug(string.format("spell set %s += %d (now %d)", class, added, NS.CountTable(set))) end
 	return added
+end
+
+-- Ensure the set is populated before anyone classifies. Cheap when already done.
+function SpellSets.Ensure()
+	local class = Client.PlayerClass()
+	if class and NS.db and NS.db.classSpells and NS.db.classSpells[class] and next(NS.db.classSpells[class]) then return end
+	SpellSets.Refresh()
 end
 
 -- Which class(es) know this spell name? Returns a list of class tokens (usually
@@ -49,9 +59,16 @@ function SpellSets.Known(class)
 end
 
 local f = CreateFrame("Frame")
-f:RegisterEvent("PLAYER_ENTERING_WORLD")
+f:RegisterEvent("PLAYER_LOGIN")
 f:RegisterEvent("SPELLS_CHANGED")
-f:RegisterEvent("LEARNED_SPELL_IN_TAB")
-f:SetScript("OnEvent", function()
+-- Event names differ by client family and RegisterEvent raises on an unknown
+-- one, so register the optional ones defensively.
+for _, ev in ipairs({ "LEARNED_SPELL_IN_TAB", "LEARNED_SPELL_IN_SKILL_LINE", "PLAYER_TALENT_UPDATE" }) do
+	pcall(f.RegisterEvent, f, ev)
+end
+f:SetScript("OnEvent", function(_, event)
+	-- PLAYER_LOGIN is after every ADDON_LOADED, so NS.db exists. The spellbook
+	-- may still be populating on some clients, so also retry shortly after.
 	SpellSets.Refresh()
+	if event == "PLAYER_LOGIN" then C_Timer.After(2, SpellSets.Refresh) end
 end)
