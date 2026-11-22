@@ -16,6 +16,9 @@ character appear on the others at their next login. No library dependencies.
 3. **A player deletion becomes a per-character TOMBSTONE** ("not on this character's page by choice").
    The macro stays in the class set and still syncs to every other character. It is never recreated
    on the character that tombstoned it, unless that character runs `/cms reset`.
+4. **The addon NEVER renames a macro to dodge a collision.** There is no `Name~2` path. A macro's
+   identity is its **body**; name and icon are attributes reconciled in place. Same body on two
+   characters is the same macro, whatever either calls it. (Set 2026-11-22 after `charge~2`, `~3`, `~4`…)
 
 Clients: WoW Forever (16001) and Classic Era (11509). Retail is deliberately not shipped until testable.
 SavedVariables are per account per install, so Era / Forever each keep their own class sets.
@@ -24,38 +27,39 @@ SavedVariables are per account per install, so Era / Forever each keep their own
 
 ```
 classes[CLASS]  = { [key] = { name, icon, body, seq } } -- the shared set, append-only; seq = insertion order
-chars[guid]     = { class, name, snapshot = { [key] = icon }, excluded = { [key] = true } }
+chars[guid]     = { class, name, snapshot = { [key] = { name, icon } }, excluded = { [key] = true } }
 seq             = global counter stamped onto every class-set addition
+schema          = 2   (1 = old name\1body keys; migrated in place at ADDON_LOADED)
 debug           = bool
-key             = name .. "\1" .. body
+key             = body
 ```
 
 - `chars` is keyed by `UnitGUID("player")` (workspace rule: never Name-Realm). `name` is display only.
-- `snapshot` = what THAT character's tab held after its last successful sync. `nil` = never synced.
+- `snapshot` = what THAT character's tab held (name + icon per body) after its last sync. `nil` = never synced.
 - `excluded` = tombstones for that character.
-- Icon is not part of the key: changing only the icon is an edit of the same macro.
+- Name and icon are not part of the key: changing either is an edit of the same macro.
 - Because the set is append-only, an edit leaves the old body behind as a second entry with the same
   name; the entry with the highest `seq` for a name is the current one.
 
 ## Merge (`Core/Merge.lua`, pure, tested offline)
 
-Plan has four lists only: `classAdd`, `localCreate`, `localEdit`, `tombstone`. No delete list exists.
+Plan has five lists: `classAdd`, `classAttr` (name/icon → class), `localCreate`, `localEdit`, `tombstone`.
+No delete list and no rename-to-avoid-collision exist.
 
 | situation | action |
 |---|---|
-| in snapshot, not on page | player deleted it here → **tombstone** (nothing else) |
-| on page, key in class set, newer `seq` exists for that name (not tombstoned here) | `EditMacro` in place to the newer body; tombstone the old key here |
-| on page, key in class set, it is the newest | in sync; icon: local≠snapshot → class, else class → local |
-| on page, name unknown to class set | `classAdd` |
-| on page, same name different body, page key in snapshot | class copy is newer → `EditMacro` in place |
-| on page, same name different body, class key in snapshot | page copy is newer → `classAdd` new body, tombstone old key here |
-| on page, same name different body, neither in snapshot (first-sync fork) | keep both: rename ours `Name~2`, `classAdd` it, `localCreate` theirs |
-| in class set, not on page, not tombstoned here, name free | `localCreate` |
+| body in snapshot, not on page, no same-named macro on page | player deleted it here → **tombstone** |
+| body in snapshot, not on page, a same-named macro IS on page | player edited the body here → excluded (not recreated); new body shared via the row below |
+| body on page, not in class set | `classAdd` (new or edited here); the class's previous body for that name is excluded here |
+| body on page and in class set, a newer `seq` body for that name exists (not here, not tombstoned) | edited elsewhere → `EditMacro` in place to the newer body |
+| body on page and in class set, same body, name/icon differ | ours changed since snapshot (or first sync) → `classAttr`; else `EditMacro` ours to the class's name/icon |
+| newest body for a name in class set, not on page, not excluded here, name free on page | `localCreate` |
 
 - **First sync** (no snapshot) is a plain union — "3 mages with 3 different macros → all have all 3";
   a fresh character with an empty page simply receives the whole class set.
 - Edits are applied with `EditMacro` in place so the macro keeps its action-bar slot.
-- `Name~2` renames are trimmed to the 16-char macro name limit.
+- Renames propagate: rename `Charge` → `charge` on one character and every other character's copy is
+  renamed in place at its next login. Never duplicated, never suffixed.
 
 ## Orchestration (`Core/Sync.lua`)
 
@@ -92,7 +96,8 @@ the interface (Forever display name = `UnitNameUnmodified` name + surname). `Cli
 ## Tests
 
 `lua5.1 tests\run.lua` from the addon folder: fake macro API where `DeleteMacro` raises. Scenarios: fresh
-character receives the set, union, in-place edit, player-delete → tombstone, fork, overflow, idempotence.
+character receives the set, union, in-place body edit, player-delete → tombstone, rename round-trip with a
+"no `~` anywhere" assertion, same-body-different-name first sync, overflow, idempotence.
 
 ## Open / to verify in game
 

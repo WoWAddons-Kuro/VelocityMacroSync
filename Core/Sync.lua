@@ -44,7 +44,7 @@ end
 local function TakeSnapshot(rec)
 	local snap = {}
 	for _, m in ipairs(Macros.ReadCharacter()) do
-		snap[NS.MacroKey(m.name, m.body)] = m.icon or false
+		snap[NS.MacroKey(m.name, m.body)] = { name = m.name, icon = m.icon or false }
 	end
 	rec.snapshot = snap
 end
@@ -55,13 +55,17 @@ local function Apply(plan, classSet, rec)
 	applying = true
 
 	for _, key in ipairs(plan.tombstone) do
-		NS.Debug("tombstone " .. key:gsub("\1", " / "))
+		NS.Debug("tombstone " .. key:gsub("\n", " | "))
 		rec.excluded[key] = true
 	end
 	for _, e in ipairs(plan.classAdd) do
 		NS.Debug("class += " .. e.name)
 		NS.db.seq = (NS.db.seq or 0) + 1
 		classSet[NS.MacroKey(e.name, e.body)] = { name = e.name, icon = e.icon, body = e.body, seq = NS.db.seq }
+	end
+	for _, a in ipairs(plan.classAttr) do
+		local e = classSet[a.key]
+		if e then NS.Debug("class attr " .. e.name .. " -> " .. a.name); e.name = a.name; e.icon = a.icon end
 	end
 	for _, e in ipairs(plan.localEdit) do
 		NS.Debug("page edit " .. e.oldName .. (e.oldName ~= e.name and (" -> " .. e.name) or ""))

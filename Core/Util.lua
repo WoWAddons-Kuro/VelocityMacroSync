@@ -17,28 +17,15 @@ function NS.Debug(msg)
 	end
 end
 
--- A macro's identity is its (name, body) pair. Icon changes alone are treated
--- as edits of the same macro (handled by the merge via name lookup), so they
--- are deliberately NOT part of the key.
-function NS.MacroKey(name, body)
-	return (name or "") .. "\1" .. (body or "")
+-- A macro's identity is its BODY. Name and icon are attributes the merge
+-- reconciles in place; a rename or icon change is an edit of the same macro,
+-- never a new one. Same body on two characters = the same macro, whatever
+-- either happens to call it.
+function NS.MacroKey(_, body)
+	return body or ""
 end
 
--- Renames "Frostbolt" -> "Frostbolt~2", "Frostbolt~3", ... avoiding names
--- already present in `taken` (a set of names). Macro names are capped at 16
--- characters by the client, so the base is trimmed to make room.
-function NS.UniqueName(name, taken)
-	if not taken[name] then return name end
-	local n = 2
-	while true do
-		local suffix = "~" .. n
-		local base = name
-		if #base + #suffix > 16 then base = base:sub(1, 16 - #suffix) end
-		local candidate = base .. suffix
-		if not taken[candidate] then return candidate end
-		n = n + 1
-	end
-end
+-- Deliberately no UniqueName / Name~2 helper: the addon never renames a macro to dodge a collision.
 
 function NS.CountTable(t)
 	local n = 0

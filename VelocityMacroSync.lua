@@ -13,6 +13,31 @@ init:SetScript("OnEvent", function(self, event, name)
 	for k, v in pairs(DB_DEFAULTS) do
 		if NS.db[k] == nil then NS.db[k] = type(v) == "table" and {} or v end
 	end
+	-- Migration (schema 1 -> 2): keys were name.."\1"..body, now body only;
+	-- snapshot values were icon, now { name=, icon= }.
+	if (NS.db.schema or 1) < 2 then
+		local function rekey(t, mapValue)
+			if type(t) ~= "table" then return t end
+			local out = {}
+			for key, v in pairs(t) do
+				local name, body = key:match("^(.-)\1(.*)$")
+				local newKey = body or key
+				out[newKey] = mapValue and mapValue(v, name or (type(v) == "table" and v.name)) or v
+			end
+			return out
+		end
+		for class, set in pairs(NS.db.classes) do
+			NS.db.classes[class] = rekey(set)
+		end
+		for _, rec in pairs(NS.db.chars) do
+			rec.snapshot = rec.snapshot and rekey(rec.snapshot, function(v, name)
+				if type(v) == "table" then return v end
+				return { name = name or "", icon = v }
+			end) or nil
+			rec.excluded = rec.excluded and rekey(rec.excluded) or {}
+		end
+		NS.db.schema = 2
+	end
 end)
 
 local function Help()

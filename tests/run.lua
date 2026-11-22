@@ -92,12 +92,29 @@ expect("A still has Fire", names():find("Fire=") ~= nil, true)
 expect("class set unchanged", NS.db.classes.WARRIOR[NS.MacroKey("Fire", "/cast Fireball")] ~= nil, true)
 expect("B tombstoned", NS.db.chars.B.excluded[NS.MacroKey("Fire", "/cast Fireball")], true)
 
--------------------------------------------------------------------- 5: first-sync fork keeps both
-addChar("D", "MD", { { name = "Frost", icon = 9, body = "/cast Frost Nova" } })
-login("D")
-expect("fork keeps both on D", names():find("Frost~2=/cast Frost Nova") ~= nil and names():find("Frost=/cast Frostbolt%(Rank 2%)") ~= nil, true)
+-------------------------------------------------------------------- 5: THE BUG. rename on one char must propagate, never fork into Name~2
+World.current = "A"
+for i, m in ipairs(cur().macros) do if m.name == "Charge" then EditMacro(MAX_ACCT + i, "charge", m.icon, m.body) end end
+edit()
+expect("A renamed Charge -> charge", names():find("charge=/cast Charge") ~= nil and names():find("Charge=") == nil, true)
+login("C")
+expect("rename reaches C in place", names():find("charge=/cast Charge") ~= nil and names():find("Charge=") == nil, true)
 login("A")
-expect("renamed reaches A", names():find("Frost~2=/cast Frost Nova") ~= nil, true)
+expect("A unchanged after round trip", names():find("charge=/cast Charge") ~= nil and names():find("Charge=") == nil, true)
+local tilde = false
+for _, ch in pairs(World.chars) do for _, m in ipairs(ch.macros) do if m.name:find("~") then tilde = true end end end
+expect("NO ~N names anywhere", tilde, false)
+local chargeCount = 0
+for _, m in ipairs(cur().macros) do if m.body == "/cast Charge" then chargeCount = chargeCount + 1 end end
+expect("exactly one Charge macro on A", chargeCount, 1)
+
+-------------------------------------------------------------------- 5b: same body, different name on first sync = ONE macro, never two
+addChar("D", "MD", { { name = "Frosty", icon = 9, body = "/cast Frostbolt(Rank 2)" } })
+login("D")
+local rank2 = 0
+for _, m in ipairs(cur().macros) do if m.body == "/cast Frostbolt(Rank 2)" then rank2 = rank2 + 1 end end
+expect("D: exactly one macro with that body", rank2, 1)
+expect("D: no ~N", names():find("~") == nil, true)
 
 -------------------------------------------------------------------- 6: overflow fills what fits and warns
 local big = {}
