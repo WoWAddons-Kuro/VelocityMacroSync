@@ -232,12 +232,16 @@ local function CreateOptions()
 		local myClass = Client.PlayerClass()
 		local Migrate, Classify = NS.Migrate, NS.Classify
 		local mine, others = {}, {}
+		local onBars = Migrate and Migrate.NamesOnBars() or {}
+		local anyOffBars = false
 		if Migrate then
 			for _, m in ipairs(Migrate.ReadGeneral()) do
 				if not Migrate.IsStub(m.name, m.body) then
 					local v = Migrate.VerdictFor(m.body)
 					m.verdict = v
+					m.onBars = onBars[m.name] == true
 					if v.class == myClass then mine[#mine + 1] = m else others[#others + 1] = m end
+					if v.class == myClass and not m.onBars then anyOffBars = true end
 				end
 			end
 		end
@@ -254,6 +258,9 @@ local function CreateOptions()
 			local label
 			if v.class then label = string.format("|cff%s%s|r", ClassHex(v.class), ClassDisplayName(v.class))
 			else label = "|cff888888" .. Classify.Describe(v) .. "|r" end
+			if v.class == myClass and not m.onBars then
+				label = label .. "  |cffff8000not on bars|r"
+			end
 			r.c3:SetPoint("TOPLEFT", NAME_W + 8, -3); r.c3:SetWidth(INNER_W - NAME_W - 8 - BTN_W - 8); r.c3:SetText(label); r.c3:Show()
 			r.btn:SetPoint("TOPRIGHT", 0, -1); r.btn:Show()
 			local can = (v.class == myClass)
@@ -278,22 +285,26 @@ local function CreateOptions()
 			r:SetHeight(math.max(r.c1:GetStringHeight(), r.c3:GetStringHeight(), 20) + 6)
 			anchor, y = r, 0
 		end
-		local function Divider(text)
+		local function Divider(text, font)
 			local r = migRows:Acquire()
 			r:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, y)
-			r.c1:SetPoint("TOPLEFT", 0, -6); r.c1:SetWidth(INNER_W); r.c1:SetText("|cffaaaaaa" .. text .. "|r"); r.c1:Show()
+			r.c1:SetPoint("TOPLEFT", 0, -6); r.c1:SetWidth(INNER_W); r.c1:SetText(text); r.c1:Show()
 			r:SetHeight(r.c1:GetStringHeight() + 12)
 			anchor, y = r, 0
 		end
 		if #mine == 0 and #others == 0 then
-			Divider("No General macros.")
+			Divider("|cffaaaaaaNo General macros.|r")
 		else
 			if #mine > 0 then
-				Divider(string.format("Detected as %s (%d)", ClassDisplayName(myClass), #mine))
+				if anyOffBars then
+					Divider("|cffff8000not on bars|r|cffaaaaaa macros will not be migrated automatically, for your safety. " ..
+						"Migrate them manually with the button, or put them on your bars to have them auto-migrated at next login.|r")
+				end
+				Divider(string.format("|cffaaaaaaDetected as %s (%d)|r", ClassDisplayName(myClass), #mine))
 				for _, m in ipairs(mine) do AddRow(m) end
 			end
 			if #others > 0 then
-				Divider(string.format("Other General macros (%d)", #others))
+				Divider(string.format("|cffaaaaaaOther General macros (%d)|r", #others))
 				for _, m in ipairs(others) do AddRow(m) end
 			end
 		end

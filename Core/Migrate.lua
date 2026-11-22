@@ -78,6 +78,16 @@ local function SlotsHolding(name)
 	return slots
 end
 
+-- Set of macro names currently on this character's action bars.
+function Migrate.NamesOnBars()
+	local onBars = {}
+	for slot = 1, Client.MaxActionSlot() do
+		local n = Client.ActionSlotMacroName(slot)
+		if n then onBars[n] = true end
+	end
+	return onBars
+end
+
 -- Find the character-tab macro with this body, or create it. Returns its
 -- index and the name it ended up with, or nil + reason.
 local function FindOrCreateClassMacro(name, icon, body)
@@ -156,11 +166,7 @@ function Migrate.Auto()
 	if not (NS.db and NS.db.autoMigrate) then return 0 end
 	if InCombatLockdown() then return 0 end
 	local myClass = Client.PlayerClass()
-	local onBars = {}
-	for slot = 1, Client.MaxActionSlot() do
-		local n = Client.ActionSlotMacroName(slot)
-		if n then onBars[n] = true end
-	end
+	local onBars = Migrate.NamesOnBars()
 	-- Snapshot the list first: each migration renames one entry and re-sorts.
 	local candidates = {}
 	for _, m in ipairs(Migrate.ReadGeneral()) do
