@@ -4,7 +4,11 @@
 --  1. THE ADDON NEVER DELETES A MACRO FROM THE CHARACTER PAGE. Only the
 --     player does. DeleteMacro is not wrapped anywhere.
 --  2. THE CLASS SET IS APPEND-ONLY and KEYED BY CONTENT HASH of the body.
---     Same body = same macro, full stop. Nothing is ever removed from it.
+--     Same body = same macro. The ONE exception to append-only: when the
+--     player EDITS a shared macro's body in place (same name, new text), the
+--     old entry is replaced by the new one - they are the same macro. The
+--     old hash is remembered in db.superseded so stale copies elsewhere are
+--     edited in place rather than re-shared as a new macro.
 --  3. A PLAYER DELETION becomes a per-character TOMBSTONE on the hash.
 --  4. THE ADDON NEVER RENAMES A MACRO THE PLAYER MADE. If the player names
 --     their macro "charge", it stays "charge" on their page. The only rename
@@ -20,6 +24,8 @@
 --
 -- Plan:
 --   classAdd    = { entry, ... }                       add to class set (hash of body)
+--   classReplace= { {oldHash=, entry=}, ... }          player EDITED a shared macro's body here: old entry is
+--                                                      superseded, new body takes its place (same name)
 --   classAttr   = { {hash=, name=, icon=}, ... }       player changed name/icon of a shared macro here
 --   localCreate = { entry, ... }                       CreateMacro on this page (entry.name may be suffixed)
 --   localEdit   = { {index=,name=,icon=,body=}, ... }  EditMacro in place (name/icon only, never body of a player macro)
@@ -47,30 +53,45 @@ local function FreeName(name, taken)
 	end
 end
 
-function Merge.Plan(snapshot, excluded, localList, classSet)
-	local plan = { classAdd = {}, classAttr = {}, localCreate = {}, localEdit = {}, tombstone = {}, untombstone = {} }
+function Merge.Plan(snapshot, excluded, localList, classSet, superseded)
+	local plan = { classAdd = {}, classReplace = {}, classAttr = {}, localCreate = {}, localEdit = {}, tombstone = {}, untombstone = {} }
 	local hadSnapshot = (snapshot ~= nil)
 	snapshot = snapshot or {}
 	excluded = excluded or {}
+	superseded = superseded or {}
 
 	-- Page, keyed by hash; and the set of names in use on the page.
+	-- Empty bodies are the client's blank "New" macro the player has not
+	-- filled in yet; they are never shared and never tombstoned.
 	local localByHash, localNames = {}, {}
 	for _, m in ipairs(localList) do
-		localByHash[NS.MacroKey(m.body)] = m
-		localNames[m.name] = m
+		if (m.body or ""):match("%S") then
+			localByHash[NS.MacroKey(m.body)] = m
+			localNames[m.name] = m
+		end
 	end
 
-	-- Tombstones: hash was on the page at last sync, is not now, and the player
-	-- did not just edit its body (a body edit shows as hash gone + same NAME present).
+	-- Hashes that were on the page at last sync and are not now. Two cases:
+	--   body EDITED : a macro with the same NAME is still on the page but with a
+	--                 different body -> the new body REPLACES the old one in the
+	--                 class set (recorded in editedFrom so pass 1 can pair them)
+	--   DELETED     : no macro of that name remains -> tombstone
+	local editedFrom = {}   -- newHash -> oldHash
 	for hash, s in pairs(snapshot) do
 		if not localByHash[hash] and not excluded[hash] then
 			local stillNamed = localNames[s.name]
-			if not stillNamed then
+			if stillNamed then
+				editedFrom[NS.MacroKey(stillNamed.body)] = hash
+			else
 				plan.tombstone[#plan.tombstone + 1] = hash
 			end
 			excluded[hash] = true   -- either way: never recreate this exact body here
 		end
 	end
+
+	-- Hashes that will be on the page once pass 1's in-place edits land.
+	-- Pass 2 must not also CREATE these; that is how an edit became a sibling.
+	local resolvedByEdit = {}
 
 	-- Pass 1: every macro on the page.
 	for hash, m in pairs(localByHash) do
@@ -83,8 +104,25 @@ function Merge.Plan(snapshot, excluded, localList, classSet)
 		end
 		local c = classSet[hash]
 		if not c then
-			-- Body unknown to the class set: share it under the player's name.
-			plan.classAdd[#plan.classAdd + 1] = { name = m.name, icon = m.icon, body = m.body }
+			-- Is this body a STALE version of a shared macro that was edited on
+			-- another character? Then it is the same macro: EditMacro our copy to
+			-- the current body instead of sharing the old text as something new.
+			local current = superseded[hash]
+			if current and classSet[current] then
+				local n = classSet[current]
+				plan.localEdit[#plan.localEdit + 1] = { index = m.index, name = n.name, icon = n.icon, body = n.body }
+				resolvedByEdit[current] = true
+				excluded[hash] = nil
+			else
+			local oldHash = editedFrom[hash]
+			if oldHash and classSet[oldHash] then
+				-- Player edited a shared macro's body: the new body supersedes the old entry.
+				plan.classReplace[#plan.classReplace + 1] = { oldHash = oldHash, entry = { name = m.name, icon = m.icon, body = m.body } }
+			else
+				-- Genuinely new body: share it under the player's name.
+				plan.classAdd[#plan.classAdd + 1] = { name = m.name, icon = m.icon, body = m.body }
+			end
+			end
 		elseif m.name ~= c.name or m.icon ~= c.icon then
 			-- Same body, different name/icon. Who changed it?
 			local s = snapshot[hash]
@@ -111,7 +149,7 @@ function Merge.Plan(snapshot, excluded, localList, classSet)
 	for n in pairs(localNames) do taken[n] = true end
 	local incoming = {}
 	for hash, e in pairs(classSet) do
-		if not localByHash[hash] and not excluded[hash] then incoming[#incoming + 1] = e end
+		if not localByHash[hash] and not excluded[hash] and not resolvedByEdit[hash] then incoming[#incoming + 1] = e end
 	end
 	table.sort(incoming, function(a, b) return (a.seq or 0) < (b.seq or 0) end)
 	for _, e in ipairs(incoming) do
@@ -124,5 +162,5 @@ function Merge.Plan(snapshot, excluded, localList, classSet)
 end
 
 function Merge.IsEmpty(plan)
-	return #plan.classAdd == 0 and #plan.classAttr == 0 and #plan.localCreate == 0 and #plan.localEdit == 0 and #plan.tombstone == 0 and #plan.untombstone == 0
+	return #plan.classAdd == 0 and #plan.classReplace == 0 and #plan.classAttr == 0 and #plan.localCreate == 0 and #plan.localEdit == 0 and #plan.tombstone == 0 and #plan.untombstone == 0
 end

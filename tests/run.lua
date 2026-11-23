@@ -81,11 +81,61 @@ World.current = "B"; expect("union B", names(), all)
 World.current = "C"; expect("union C", names(), all)
 
 -------------------------------------------------------------------- 3: body edit on A. B's own "Frost" is NEVER touched; the new body arrives beside it under a free name
+-------------------------------------------------------------------- 2b: THE TYPO FIX. Edit a shared macro's body in place -> class set has ONE entry, not two
+addChar("P1", "Priest1", {})
+addChar("P2", "Priest2", {})
+World.chars.P1.class = "PRIEST"; World.chars.P2.class = "PRIEST"
+login("P1")
+CreateMacro("swp", 1, "#showtooltip\n/startattack\n/cast Shadow Word Pain", true); edit()   -- typo: no colon
+local function priestSet()
+	local t = {}
+	for _, e in pairs(NS.db.classes.PRIEST or {}) do t[#t + 1] = e.name .. "=" .. e.body:gsub("\n", "|") end
+	table.sort(t); return table.concat(t, " ;; ")
+end
+expect("typo version shared", priestSet(), "swp=#showtooltip|/startattack|/cast Shadow Word Pain")
+-- fix the typo IN PLACE on the same macro (same name, new body)
+for i, m in ipairs(cur().macros) do if m.name == "swp" then EditMacro(MAX_ACCT + i, "swp", 1, "#showtooltip\n/startattack\n/cast Shadow Word: Pain") end end
+edit()
+expect("class set has ONE swp, the fixed one (not a fork)", priestSet(), "swp=#showtooltip|/startattack|/cast Shadow Word: Pain")
+expect("P1 page has exactly one swp", (function() local n = 0 for _, m in ipairs(cur().macros) do if m.name == "swp" then n = n + 1 end end return n end)(), 1)
+expect("P1 has NO tombstone for the typo body (it was an edit, not a delete)", #NS.Sync.ExcludedHere(), 0)
+-- the other priest picks up the fix in place, not as a second macro
+login("P2")
+expect("P2 got the fixed body", names(), "swp=#showtooltip\n/startattack\n/cast Shadow Word: Pain")
+login("P1")
+expect("P1 unchanged after round trip", (function() local n = 0 for _, m in ipairs(cur().macros) do if m.name == "swp" then n = n + 1 end end return n end)(), 1)
+
+-------------------------------------------------------------------- 2c: empty macros are never shared
+World.current = "P1"
+CreateMacro("New Macro", 1, "", true); edit()
+expect("empty body NOT in class set", priestSet():find("New Macro") == nil, true)
+CreateMacro("blank2", 1, "   \n  ", true); edit()
+expect("whitespace-only body NOT in class set", priestSet():find("blank2") == nil, true)
+login("P2")
+expect("P2 did not receive the empty macros", names():find("New Macro") == nil and names():find("blank2") == nil, true)
+
+-------------------------------------------------------------------- 2d: typo fix on one char while another has the old body -> that char is EDITED in place, not given a sibling
+-- P2 currently has the fixed swp. Edit it AGAIN on P1 to a third body; P2 must end with one swp, the newest.
+World.current = "P1"
+for i, m in ipairs(cur().macros) do if m.name == "swp" then EditMacro(MAX_ACCT + i, "swp", 1, "#showtooltip\n/cast Shadow Word: Pain\n/startattack") end end
+edit()
+login("P2")
+local swpCount, swpBody = 0, nil
+for _, m in ipairs(cur().macros) do if m.name == "swp" then swpCount = swpCount + 1; swpBody = m.body end end
+expect("P2 still has exactly one swp", swpCount, 1)
+expect("P2's swp is the newest body", swpBody, "#showtooltip\n/cast Shadow Word: Pain\n/startattack")
+expect("P2 has no tombstones from the edits", #NS.Sync.ExcludedHere(), 0)
+expect("class set still ONE swp", priestSet(), "swp=#showtooltip|/cast Shadow Word: Pain|/startattack")
+
+-------------------------------------------------------------------- 3: body edit on A propagates IN PLACE to B (same macro, new text) - never a sibling
 World.current = "A"
 for i, m in ipairs(cur().macros) do if m.name == "Frost" then EditMacro(MAX_ACCT + i, "Frost", 1, "/cast Frostbolt(Rank 2)") end end
 edit()
 login("B")
-expect("edit -> B as a new macro, B's Frost untouched", names(), "Blink=/cast Blink | Charge=/cast Charge | Fire=/cast Fireball | Frost 2=/cast Frostbolt(Rank 2) | Frost=/cast Frostbolt")
+expect("edit -> B edits B's Frost in place, ONE Frost", names(), "Blink=/cast Blink | Charge=/cast Charge | Fire=/cast Fireball | Frost=/cast Frostbolt(Rank 2)")
+local frostEntries = 0
+for _, e in pairs(NS.db.classes.WARRIOR) do if e.name == "Frost" then frostEntries = frostEntries + 1 end end
+expect("class set has exactly ONE Frost after the edit", frostEntries, 1)
 login("A")
 expect("A: old Frost body NOT recreated (edited away here)", names():find("Frost=/cast Frostbolt |") == nil and names():find("Frostbolt(Rank 2)", 1, true) ~= nil, true)
 
@@ -143,7 +193,10 @@ expect("D: no ~N", names():find("~") == nil, true)
 addChar("F", "MF", {})
 login("F")                                               -- F receives the shared "charge"
 expect("F got shared charge", names():find("charge=/cast Charge") ~= nil, true)
-playerDelete("charge")                                  -- player removes it...
+-- The client fires UPDATE_MACROS per operation, so a merge runs after the delete
+-- (tombstoning the old body) BEFORE the create is seen. That is what separates
+-- "deleted it and made a new one" from "edited it": the tombstone in between.
+playerDelete("charge"); edit()                          -- player removes it... (merge: tombstone)
 CreateMacro("charge", 5, "/cast Charge\n/startattack", true)  -- ...and makes their OWN "charge"
 edit()
 local function chargeNamesOn()

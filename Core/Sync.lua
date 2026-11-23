@@ -63,6 +63,29 @@ local function Apply(plan, classSet, rec)
 		NS.db.seq = (NS.db.seq or 0) + 1
 		classSet[NS.MacroKey(e.body)] = { name = e.name, icon = e.icon, body = e.body, seq = NS.db.seq }
 	end
+	-- A body EDIT on a shared macro. This is the one place the class set is
+	-- not append-only: the old body is replaced by the new one, because they
+	-- are the SAME macro (same name, the player just changed its text). The
+	-- old hash is recorded in db.superseded[oldHash] = newHash so that when
+	-- another character logs in still holding the old body, Merge recognises
+	-- it as stale and EditMacro's it in place to the new body, rather than
+	-- re-sharing the old text as a brand-new macro. Other characters'
+	-- tombstones on the old hash are cleared: that body no longer exists.
+	for _, r in ipairs(plan.classReplace) do
+		local old = classSet[r.oldHash]
+		NS.Debug("class edit " .. (old and old.name or r.oldHash) .. " -> new body")
+		local newHash = NS.MacroKey(r.entry.body)
+		classSet[r.oldHash] = nil
+		NS.db.seq = (NS.db.seq or 0) + 1
+		classSet[newHash] = { name = r.entry.name, icon = r.entry.icon, body = r.entry.body, seq = NS.db.seq }
+		NS.db.superseded = NS.db.superseded or {}
+		-- Collapse chains: anything that pointed at the old hash now points at the new one.
+		for h, target in pairs(NS.db.superseded) do if target == r.oldHash then NS.db.superseded[h] = newHash end end
+		NS.db.superseded[r.oldHash] = newHash
+		for _, other in pairs(NS.db.chars) do
+			if other.excluded then other.excluded[r.oldHash] = nil end
+		end
+	end
 	for _, a in ipairs(plan.classAttr) do
 		local e = classSet[a.hash]
 		if e then NS.Debug("class attr " .. e.name .. " -> " .. a.name); e.name = a.name; e.icon = a.icon end
@@ -106,7 +129,7 @@ function Sync.Run(reason)
 	local classSet, class = ClassSet()
 	local rec = CharRecord()
 	local localList = Macros.ReadCharacter()
-	local plan = Merge.Plan(rec.snapshot, rec.excluded, localList, classSet)
+	local plan = Merge.Plan(rec.snapshot, rec.excluded, localList, classSet, NS.db.superseded)
 
 	if Merge.IsEmpty(plan) then
 		if not rec.snapshot then TakeSnapshot(rec) end
@@ -143,6 +166,10 @@ function Sync.Run(reason)
 	if #plan.classAdd > 0 then
 		Say(string.format("Sharing %d new macro%s with your other %s characters: %s", #plan.classAdd, plural(#plan.classAdd), classLabel, Names(plan.classAdd)))
 	end
+	if #plan.classReplace > 0 then
+		local t = {} for _, r in ipairs(plan.classReplace) do t[#t + 1] = r.entry.name end
+		Say(string.format("Updated %d shared macro%s for your other %s characters: %s", #plan.classReplace, plural(#plan.classReplace), classLabel, table.concat(t, ", ")))
+	end
 	if #plan.tombstone > 0 then
 		Say(string.format("%d macro%s you deleted here will stay off this character (other characters keep %s)", #plan.tombstone, plural(#plan.tombstone), #plan.tombstone == 1 and "it" or "them"))
 	end
@@ -155,7 +182,7 @@ function Sync.Run(reason)
 	if #newOverflow > 0 then
 		NS.Warn(string.format("%d macro%s did not fit (%d character slots): %s", #newOverflow, plural(#newOverflow), Client.MaxCharacterMacros(), table.concat(newOverflow, ", ")))
 	end
-	return #created + #plan.localEdit + #plan.classAdd + #plan.tombstone + #plan.untombstone
+	return #created + #plan.localEdit + #plan.classAdd + #plan.classReplace + #plan.tombstone + #plan.untombstone
 end
 
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
