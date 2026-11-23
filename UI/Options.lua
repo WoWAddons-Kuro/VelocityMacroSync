@@ -53,7 +53,7 @@ local MIGRATE_WARNING = "WARNING: " .. MIGRATE_WARNING_BODY
 
 StaticPopupDialogs["VELOCITYMACROSYNC_ENABLE_MIGRATION"] = {
 	text = "Make sure you are happy with this addon\n\n" .. MIGRATE_WARNING_BODY ..
-		"\n\nIf you want us to auto-migrate all your characters DO NOT DELETE the general tracking macros. " ..
+		"\n\nIf you want us to auto-migrate all your characters DO NOT DELETE the ~~vms~### tracking macros. " ..
 		"You may delete them after all characters are migrated.\n\nTurn on automatic migration?",
 	button1 = "Enable migration",
 	button2 = CANCEL,
