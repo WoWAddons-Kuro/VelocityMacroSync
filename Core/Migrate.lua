@@ -2,12 +2,16 @@
 --
 -- Moves a General-tab macro that belongs to this character's class into the
 -- character tab (where Sync shares it with the class), re-points this
--- character's bar buttons at the new macro, and converts the general macro
--- into an inert STUB in place with EditMacro. The stub keeps every other
--- character's button references alive until they log in and remap (M5).
+-- character's bar buttons at the new macro, and RENAMES the general macro to
+-- ~~vms~### in place with EditMacro, inserting one short tag line. The body is
+-- otherwise untouched, so:
+--   * the General copy still WORKS for any character that has not remapped yet
+--   * every other character's button references stay alive until they log in
+--     and remap (M5)
+--   * if the player uninstalls this addon they rename ~~vms~### back and are done
 --
 -- HARD RULES (00_VelocityMacroSync.md): nothing here deletes a macro, ever.
--- The stub IS the user's general macro, renamed and rewritten.
+-- The migrated general macro IS the user's macro, renamed, body intact.
 --
 -- Two entry points:
 --   Migrate.One(generalIndex)  explicit, from the settings page; not gated by
@@ -20,27 +24,74 @@ local Client, Macros, Classify, SpellSets = NS.Client, NS.Macros, NS.Classify, N
 local Migrate = {}
 NS.Migrate = Migrate
 
-Migrate.STUB_ICON = 134400                     -- INV_Misc_QuestionMark
-Migrate.MARKER = "#VelocityMacroSync-migrated v1"
+-- The tag is ONE short comment line: "#:VMS:HUNTER". It is inserted AFTER
+-- any leading # lines (#showtooltip must stay the first line of the macro
+-- or the client ignores it) and BEFORE the first command line.
+-- Macro bodies cap at 255 chars and a user's macro may already be near it,
+-- so the tag is as short as it can be while still carrying the class (which
+-- lets Remap skip foreign-class entries without classifying the body again).
+-- Hash and original name are NOT stored: the body is right there.
+Migrate.TAG_PREFIX = "#:VMS:"
+Migrate.MAX_BODY = 255
 
--- Stub body / parse. Hash goes before the name because names may contain spaces.
-function Migrate.StubBody(class, hash, originalName)
-	return string.format("%s %s %s %s", Migrate.MARKER, class, hash, originalName)
+function Migrate.TagLine(class)
+	return Migrate.TAG_PREFIX .. class
 end
 
+-- Insert the tag into a body after the leading #-header block. Returns the
+-- new body, or nil if it would not fit (we never truncate a user's macro).
+function Migrate.TaggedBody(body, class)
+	body = body or ""
+	local lines = {}
+	for line in (body .. "\n"):gmatch("([^\n]*)\n") do lines[#lines + 1] = line end
+	-- Drop the phantom empty element a trailing newline produces.
+	if #lines > 0 and lines[#lines] == "" and body:sub(-1) ~= "\n" then lines[#lines] = nil end
+	local insertAt = 1
+	while insertAt <= #lines and lines[insertAt]:match("^%s*#") do insertAt = insertAt + 1 end
+	table.insert(lines, insertAt, Migrate.TagLine(class))
+	local tagged = table.concat(lines, "\n")
+	if #tagged > Migrate.MAX_BODY then return nil end
+	return tagged
+end
+
+-- Split a possibly-tagged body into (original body, class or nil). The tag
+-- may be on any line, so remove exactly that line wherever it is.
+function Migrate.Untag(body)
+	if not body then return "", nil end
+	local class
+	local kept = {}
+	for line in (body .. "\n"):gmatch("([^\n]*)\n") do
+		local c = line:match("^%s*#:VMS:(%u+)%s*$")
+		if c and not class then class = c else kept[#kept + 1] = line end
+	end
+	if #kept > 0 and kept[#kept] == "" and body:sub(-1) ~= "\n" then kept[#kept] = nil end
+	if not class then return body, nil end
+	return table.concat(kept, "\n"), class
+end
+
+-- A migrated general macro is recognised by NAME ALONE: "~~vms~###".
+--   ~~     ASCII 126 sorts after every letter and digit, so the block is
+--          always at the very end of the General tab. Two of them so a user
+--          who already prefixes their own macros with ~ still cannot collide.
+--   vms~   the addon's mark
+--   ###    migration order, unique
+-- The body tag (#:VMS:CLASS) is informational only and may be absent when
+-- the body was already at the 255-char cap. Remap classifies untagged bodies
+-- to recover the class. The parse result is what Remap needs: class (nil if
+-- untagged) and the original body for hash matching.
+Migrate.STUB_NAME_PREFIX = "~~vms~"
+
 function Migrate.ParseStub(body)
-	if not body then return nil end
-	local class, hash, name = body:match("^#VelocityMacroSync%-migrated v1 (%u+) (%x+) (.+)$")
-	if class then return { class = class, hash = hash, name = name } end
-	return nil
+	local base, class = Migrate.Untag(body)
+	return { class = class, body = base, hash = NS.MacroKey(base) }
 end
 
 function Migrate.IsStubName(name)
-	return name ~= nil and name:match("^zz%d+$") ~= nil
+	return name ~= nil and name:match("^~~vms~%d+$") ~= nil
 end
 
 function Migrate.IsStub(name, body)
-	return Migrate.IsStubName(name) and Migrate.ParseStub(body) ~= nil
+	return Migrate.IsStubName(name)
 end
 
 -- General-tab macros as { index, name, icon, body }. Indices 1..MaxAccountMacros.
@@ -54,14 +105,14 @@ function Migrate.ReadGeneral()
 	return list
 end
 
--- Next free zz### name: highest existing + 1 (scanned, never stored).
+-- Next free ~~vms~### name: highest existing + 1 (scanned, never stored).
 function Migrate.NextStubName(generalList)
 	local max = 0
 	for _, m in ipairs(generalList or Migrate.ReadGeneral()) do
-		local n = m.name:match("^zz(%d+)$")
+		local n = m.name:match("^~~vms~(%d+)$")
 		if n then max = math.max(max, tonumber(n)) end
 	end
-	return string.format("zz%03d", max + 1)
+	return string.format("~~vms~%03d", max + 1)
 end
 
 -- Classifier verdict for a general macro (uses the live spell sets).
@@ -140,24 +191,32 @@ function Migrate.One(generalIndex, opts)
 		Client.PlaceMacroInSlot(classIndex, slot)
 	end
 
-	-- Convert the general macro to a stub IN PLACE. Resolve the index by name
-	-- right now: creating the class macro did not renumber General, but be
-	-- defensive about it anyway.
+	-- Rename the general macro to ~~vms~### IN PLACE and insert the tag line.
+	-- Body is preserved so it keeps working for un-remapped characters and
+	-- can be renamed back by hand if the addon is removed. Resolve the index
+	-- by name right now: creating the class macro did not renumber General,
+	-- but be defensive about it anyway.
 	local liveIndex = Client.GetMacroIndexByName(name)
 	if not liveIndex or liveIndex == 0 or liveIndex > Client.MaxAccountMacros() then liveIndex = generalIndex end
 	local stubName = Migrate.NextStubName()
-	local ok = Macros.Edit(liveIndex, stubName, Migrate.STUB_ICON, Migrate.StubBody(myClass, NS.MacroKey(body), name))
-	if not ok then return false, "EditMacro failed converting to stub" end
+	local newBody = Migrate.TaggedBody(body, myClass)
+	local tagNote = ""
+	if not newBody then
+		newBody = body     -- too long to tag: rename only, body untouched
+		tagNote = " (body at 255-char limit; renamed without tag)"
+	end
+	local ok = Macros.Edit(liveIndex, stubName, icon, newBody)
+	if not ok then return false, "EditMacro failed renaming general macro" end
 
 	-- We just wrote to the character page. Bring the class set in line NOW,
 	-- synchronously, rather than hoping an UPDATE_MACROS (which our own guard
 	-- swallows) gets around to it.
 	if NS.Sync and NS.Sync.Reconcile then NS.Sync.Reconcile("migrate") end
 
-	NS.Print(string.format("Moved \"%s\" to your %s macros%s; %d bar button%s updated. General copy is now stub %s.",
+	NS.Print(string.format("Moved \"%s\" to your %s macros%s; %d bar button%s updated. General copy renamed to %s%s.",
 		name, (UnitClass("player")) or myClass,
 		classNameOrErr ~= name and (" as \"" .. classNameOrErr .. "\"") or "",
-		#slots, #slots == 1 and "" or "s", stubName))
+		#slots, #slots == 1 and "" or "s", stubName, tagNote))
 	return true
 end
 
@@ -205,7 +264,14 @@ function Migrate.Remap()
 			local idx = Client.GetMacroIndexByName(stubName)
 			local body
 			if idx and idx > 0 then local _, _, b = Client.GetMacroInfo(idx); body = b end
-			stubBodies[stubName] = Migrate.ParseStub(body) or false
+			if body then
+				local p = Migrate.ParseStub(body)
+				-- Untagged (body was at the length cap): classify to find the class.
+				if not p.class then p.class = Migrate.VerdictFor(p.body).class end
+				stubBodies[stubName] = p
+			else
+				stubBodies[stubName] = false
+			end
 		end
 		return stubBodies[stubName] or nil
 	end
@@ -216,13 +282,13 @@ function Migrate.Remap()
 		if name and Migrate.IsStubName(name) then
 			local p = payloadFor(name)
 			if p and p.class == myClass then
-				local target = byHash[p.hash] or byName[p.name]
+				local target = byHash[p.hash]
 				if target then
 					Client.PlaceMacroInSlot(target, slot)
 					remapped = remapped + 1
 				elseif not seenUnresolved[name] then
 					seenUnresolved[name] = true
-					unresolved[#unresolved + 1] = p.name
+					unresolved[#unresolved + 1] = name
 				end
 			end
 		end

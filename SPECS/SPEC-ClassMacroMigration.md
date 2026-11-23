@@ -22,9 +22,9 @@ path, per-client files under `Client\`.
 
 VelocityMacroSync keeps the character-specific macro tab identical across all characters of the same class. This spec covers one feature of it: automatically moving macros that contain class-specific spells out of the **General** tab and into the character tab, where the class sync then carries them to every character of that class.
 
-The hard constraint is action bars. A general macro is shared by every character on the account, and a bar button holds a reference to the macro, not its text. Deleting a general macro makes the buttons that reference it on other characters silently disappear, with nothing left to identify what was there. So migration never deletes, and nothing else in the addon does either (product rule 1). It converts the general macro into a **stub** in place by renaming it and rewriting its body with `EditMacro`, which keeps every button reference alive. Each other character of the class swaps its stub buttons for the class macro the next time it logs in.
+The hard constraint is action bars. A general macro is shared by every character on the account, and a bar button holds a reference to the macro, not its text. Deleting a general macro makes the buttons that reference it on other characters silently disappear, with nothing left to identify what was there. So migration never deletes, and nothing else in the addon does either (product rule 1). It **renames** the general macro to `~~vms~###` in place with `EditMacro` and inserts one tag line, keeping the body, which keeps every button reference alive **and working**. Each other character of the class swaps those buttons for the class macro the next time it logs in.
 
-Stubs are renamed so they sort to the end of the General tab, forming a block of migrated records. They are permanent; the addon has no delete path.
+Migrated general macros sort to the end of the General tab as a block. They are permanent; the addon has no delete path. A user who removes the addon renames them back.
 
 ## Design
 
@@ -35,7 +35,7 @@ Stubs are renamed so they sort to the end of the General tab, forming a block of
 | General macro | Macro in the account-wide tab. Indices `1..MAX_ACCOUNT_MACROS`. |
 | Character macro | Macro in the per-character tab. Indices above `MAX_ACCOUNT_MACROS`. |
 | Class macro | A character macro held in the class set (`db.classes[CLASS]`) and synced to all characters of a class. Identified by the **content hash of its body** (`NS.MacroKey(body)`, FNV-1a 32-bit hex). |
-| Stub | A general macro that has been migrated: renamed, re-iconed, body replaced by a marker line. |
+| Migrated general macro (code still says "stub") | A general macro that has been migrated: renamed `~~vms~###`, one `#:VMS:CLASS` line inserted, body and icon otherwise intact. Still works. |
 | Action slot | A bar button position (`1..120` on Classic clients, more on Retail). Never shifts. |
 | Macro index | A macro's position in the macro list. Shifts on create, rename and delete, because the list is sorted by name. |
 
@@ -135,7 +135,7 @@ For a general macro `G` (name `N`, icon `I`, body `B`) classified as the current
    - If the character tab is full (`MAX_CHARACTER_MACROS`), skip this macro, leave `G` untouched and print a message. Nothing is ever dropped silently.
    - If `N` is already held on the page by a different body, product rule 5 applies: the migrated copy is created as `N 2`.
 2. **Re-place this character's bar buttons.** For every action slot holding `G`: pick up the class macro, place it in the slot, clear the cursor.
-3. **Convert `G` to a stub** with `EditMacro` (see below). `EditMacro` changes the macro in place, so references to it from other characters' bars survive. The rename re-sorts the list; use the index `EditMacro` returns.
+3. **Rename `G` to `~~vms~###` and insert the tag line** with `EditMacro` (see below). `EditMacro` changes the macro in place, so references to it from other characters' bars survive, and the body is preserved so those buttons keep working. The rename re-sorts the list.
 
 ```lua
 -- pseudocode
@@ -145,53 +145,55 @@ for slot = 1, MAX_ACTION_SLOT do
         PickupMacro(classIndex); PlaceAction(slot); ClearCursor()
     end
 end
-EditMacro(ResolveIndex(G), NextStubName(), STUB_ICON, StubBody(classToken, NS.MacroKey(B), N))
+EditMacro(ResolveIndex(G), NextStubName(), I, TaggedBody(B, classToken) or B)   -- icon I kept; body kept if tag would not fit
 ```
 
-### Stub Format
+### Migrated General Macro Format
 
-**Name:** `zz` followed by a zero-padded three-digit number, for example `zz007`.
+Decided 2026-11-22, replacing the earlier "rewrite the body to a marker line" design: the general macro is
+**renamed and tagged, body preserved**. It keeps working for any character that has not remapped yet, and a
+user who removes the addon can rename it back by hand.
 
-- Punctuation sorts before letters in the macro list, so a letter prefix is used. `zz` places stubs at the end of the General tab.
-- The number only makes the name unique and keeps stubs in migration order. It is not the record ID.
-- The next number is taken by scanning existing general macro names for the highest `^zz(%d+)$` and adding one. It is not kept as a counter in SavedVariables, so a wiped SavedVariables file cannot cause a collision with stubs that still exist.
-- A stub is recognized by the **whole-name** pattern `^zz%d+$` together with the body marker, so a real macro that happens to start with `zz` is never mistaken for one.
+**Name:** `~~vms~` followed by a zero-padded three-digit number, for example `~~vms~007`.
 
-**Icon:** one fixed "migrated" icon for all stubs (constant `STUB_ICON`; the question-mark icon, file ID 134400, is the default).
+- `~` is ASCII 126, after every letter and digit, so the block sorts to the very end of the General tab. Two of
+  them so a user who already prefixes their own macros with `~` cannot collide. `vms~` is the addon's mark.
+- The number only makes the name unique and keeps migration order. It is not the record ID.
+- The next number is taken by scanning existing general macro names for the highest `^~~vms~(%d+)$` and adding
+  one. It is not kept in SavedVariables, so a wiped SavedVariables file cannot cause a collision.
+- **A migrated macro is recognised by name alone** (`Migrate.IsStubName`). The body tag below is informational.
 
-**Body:** a single comment line.
+**Icon:** unchanged. The user's icon is preserved.
+
+**Body:** the original body with ONE comment line inserted **after any leading `#` lines** (so `#showtooltip`
+stays first, which the client requires) and before the first command:
 
 ```
-#VelocityMacroSync-migrated v1 <CLASS> <bodyHash> <original macro name>
+#showtooltip
+#:VMS:HUNTER
+/cast [nomod] Arcane Shot
 ```
 
-| Field | Meaning |
-|---|---|
-| `v1` | Payload format version. |
-| `<CLASS>` | Class token, e.g. `MAGE`. |
-| `<bodyHash>` | `NS.MacroKey(originalBody)`: 8 hex chars. Looks the class macro up in `db.classes[CLASS]`. |
-| rest of line | The original macro name. Placed last because names may contain spaces and punctuation. |
+- The tag is `#:VMS:` + class token, 12 chars for the longest class. Nothing else is stored: the body IS the
+  original, so `NS.MacroKey(Untag(body))` is the hash and the original name is not needed (Remap matches by hash).
+- Bodies cap at 255 chars. If adding the tag line would exceed that, the macro is **renamed only** and the body
+  is left byte-for-byte untouched; chat says so. Remap handles the untagged case by classifying the body.
+  The user's macro is never truncated to make room.
+- `Migrate.Untag(body)` removes exactly the tag line wherever it is and returns `(originalBody, class)`.
 
-```lua
--- pseudocode; note the escaped hyphen
-local class, hash, name =
-    body:match("^#VelocityMacroSync%-migrated v1 (%u+) (%x+) (.+)")
-```
-
-Limits: macro names are at most 16 characters and bodies at most 255. The marker prefix is 27 characters, so the full line fits with a wide margin.
-
-**The stub is the migration record.** It carries everything needed to remap, so no separate migration table is required in SavedVariables. If the class set is ever wiped (`/velocitymacrosync reset`) and the hash no longer resolves, the original name in the payload is the fallback for finding the class macro on the page.
+**The migrated general macro is the migration record.** Name says "migrated", tag says which class, body is
+the content. No separate migration table in SavedVariables.
 
 ### Login Remap Sweep
 
 Runs on every login after the class sync merge, so the character already has the class macros.
 
 1. For each action slot whose action type is `macro`, read the button's macro name with `GetActionText(slot)`.
-2. If the name matches `^zz%d+$`, resolve the general macro by that name (stub names are unique) and parse its body.
-3. If the payload's class equals the logged-in character's class:
-   - Resolve the class macro on this page: by body hash (`NS.MacroKey` of each page macro's body), falling back to the original name.
+2. If the name matches `^~~vms~%d+$`, resolve the general macro by that name (unique) and parse its body: strip the `#:VMS:CLASS` line to get the original body and the class. If there is no tag line (body was at the cap), classify the body to get the class.
+3. If that class equals the logged-in character's class:
+   - Resolve the class macro on this page by body hash (`NS.MacroKey` of the original body).
    - Pick up the class macro, place it in the slot, clear the cursor.
-4. Stubs for other classes are ignored.
+4. Migrated macros of other classes are ignored.
 
 Matching on the button's name avoids depending on what `GetActionInfo` returns as the macro identifier, which differs between clients.
 
@@ -199,11 +201,16 @@ The sweep is idempotent: once a slot is remapped it no longer holds a stub, so r
 
 If the class macro cannot be resolved (deleted from the class store, or not yet synced), the slot is left on the stub and a message is printed.
 
-### Stubs Are Permanent
+### Migrated General Macros Are Permanent
 
-The addon never deletes a macro, so stubs stay in the General tab. They sort to the end as a `zz###` block and are inert (a comment-only body does nothing when pressed). They are the only thing keeping other characters' bar buttons alive until those characters log in and remap, and there is no way to know from one character whether every other character has done so.
+The addon never deletes a macro, so migrated general macros stay in the General tab. They sort to the end as a
+`~~vms~###` block and **still work** (body intact). They are the only thing keeping other characters' bar buttons
+alive until those characters log in and remap, and there is no way to know from one character whether every
+other character has done so.
 
-If the user wants the general slots back they delete the stubs by hand, knowing that any character of that class that has not logged in since the migration will lose those buttons.
+If the user wants the general slots back they delete them by hand, knowing that any character of that class that
+has not logged in since the migration will lose those buttons. If the user removes the addon, renaming
+`~~vms~###` back to the original name (and deleting the `#:VMS:` line) restores the macro exactly.
 
 ### Behavior on Other Characters
 
@@ -321,12 +328,12 @@ Confirmed by test on Classic Era:
 
 To confirm on each client before relying on it:
 
-- [ ] `EditMacro` on a general macro (rename + new body) keeps bar references on **other** characters intact.
-- [ ] A body consisting only of a `#…` line is ignored when the button is pressed (not sent to chat).
+- [ ] `EditMacro` on a general macro (rename + body with one extra `#` line) keeps bar references on **other** characters intact.
+- [ ] `#showtooltip` still works with `#:VMS:CLASS` as the second line.
 - [ ] `GetActionText(slot)` returns the macro name for macro buttons.
 - [ ] What `GetActionInfo(slot)` returns as `id` for a macro button (macro index on Classic; may differ on Retail).
 - [ ] Highest action slot number (`120` on Classic clients; higher on Retail).
-- [ ] `zz###` names sort after all other general macros.
+- [ ] `~~vms~###` names sort after all other general macros.
 - [ ] Macro API parity on WoW Forever (`CreateMacro`, `EditMacro`, `GetActionText`).
 - [ ] `UPDATE_MACROS` fires after macros are available at login.
 
@@ -347,7 +354,7 @@ To confirm on each client before relying on it:
 
 - ~~Items in class macros~~ Decided 2026-11-22: `/use` lines are ignored by the classifier (see Classifier).
 - **Migration during play.** Migration runs at login. Should it also run when a general macro is created or edited mid-session, or would moving a macro the player just saved be surprising?
-- **Stub feedback.** The stub body is a comment only, so pressing an un-remapped button does nothing. Add a second line that prints where the macro went?
+- ~~Stub feedback~~ Moot since 2026-11-22: the migrated general macro keeps its body, so an un-remapped button still works.
 
 ## Alternatives Considered
 

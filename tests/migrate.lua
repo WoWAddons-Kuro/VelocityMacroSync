@@ -80,17 +80,25 @@ addGeneral("hs", "/cast Heroic Strike")        -- warrior, but NOT on bars
 W.slots[1] = "charge"; W.slots[13] = "charge"; W.slots[2] = "frost"; W.slots[3] = "hello"
 expect("setup general", general(), "charge,frost,hello,hs")
 
--------------------------------------------------------------------- stub format
-local body = M.StubBody("WARRIOR", "deadbeef", "my charge")
-local p = M.ParseStub(body)
-expect("stub roundtrip class", p.class, "WARRIOR")
-expect("stub roundtrip hash", p.hash, "deadbeef")
-expect("stub roundtrip name with space", p.name, "my charge")
-expect("stub body under 255", #body < 255, true)
-expect("IsStub needs both name and marker", M.IsStub("zz001", "/cast x"), false)
-expect("IsStub real", M.IsStub("zz001", body), true)
+-------------------------------------------------------------------- tag format: body preserved, tag after #-header, class recoverable
+local tagged = M.TaggedBody("#showtooltip\n/cast Charge", "WARRIOR")
+expect("tag goes AFTER #showtooltip, before first command", tagged, "#showtooltip\n#:VMS:WARRIOR\n/cast Charge")
+expect("tag with no header goes first", M.TaggedBody("/cast Charge", "WARRIOR"), "#:VMS:WARRIOR\n/cast Charge")
+expect("tag after multiple # lines", M.TaggedBody("#showtooltip\n#show Charge\n/cast Charge", "WARRIOR"), "#showtooltip\n#show Charge\n#:VMS:WARRIOR\n/cast Charge")
+local base, cls = M.Untag(tagged)
+expect("untag recovers body exactly", base, "#showtooltip\n/cast Charge")
+expect("untag recovers class", cls, "WARRIOR")
+expect("untag of untagged body is identity", (M.Untag("/cast Charge")), "/cast Charge")
+local p = M.ParseStub(tagged)
+expect("parse: class", p.class, "WARRIOR")
+expect("parse: hash is of ORIGINAL body", p.hash, NS.MacroKey("#showtooltip\n/cast Charge"))
+-- a body already at the cap cannot take the tag; TaggedBody returns nil and One() renames without it
+local fat = string.rep("/say x\n", 36):sub(1, 250)
+expect("fat body refuses tag", M.TaggedBody(fat, "WARRIOR"), nil)
+expect("IsStub is by NAME alone (tag optional)", M.IsStub("~~vms~001", "/cast x"), true)
+expect("plain zz001 is NOT ours", M.IsStubName("zz001"), false)
 expect("zzreal is not a stub name", M.IsStubName("zzreal"), false)
-expect("first stub name", M.NextStubName(), "zz001")
+expect("first stub name", M.NextStubName(), "~~vms~001")
 
 -------------------------------------------------------------------- Auto: disabled does nothing
 expect("auto disabled", M.Auto(), 0)
@@ -100,17 +108,18 @@ expect("nothing changed", general(), "charge,frost,hello,hs")
 NS.db.autoMigrate = true
 expect("auto moved exactly one", M.Auto(), 1)
 expect("char tab has charge", charTab(), "charge")
-expect("general: charge became zz001, hs untouched (not on bars), frost/hello untouched", general(), "frost,hello,hs,zz001")
+expect("general: charge became zz001, hs untouched (not on bars), frost/hello untouched", general(), "frost,hello,hs,~~vms~001")
 expect("slot 1 now points at class macro", W.slots[1], "charge")
 expect("slot 13 too", W.slots[13], "charge")
 expect("slot 2 (frost, mage) untouched", W.slots[2], "frost")
 expect("slot 3 (hello) untouched", W.slots[3], "hello")
 local stub = W.general[4]
 local sp = M.ParseStub(stub.body)
-expect("stub carries class", sp.class, "WARRIOR")
-expect("stub carries hash of original body", sp.hash, NS.MacroKey(CHARGE))
-expect("stub carries original name", sp.name, "charge")
-expect("stub icon", stub.icon, M.STUB_ICON)
+expect("migrated general carries class tag", sp.class, "WARRIOR")
+expect("migrated general body hashes to the ORIGINAL", sp.hash, NS.MacroKey(CHARGE))
+expect("migrated general STILL WORKS: body intact minus tag", sp.body, CHARGE)
+expect("tag sits after #showtooltip", stub.body:match("^#showtooltip\n#:VMS:WARRIOR\n") ~= nil, true)
+expect("icon preserved, not replaced", stub.icon, 1)
 expect("general count unchanged (nothing deleted)", #W.general, 4)
 
 -------------------------------------------------------------------- Auto again: idempotent
@@ -122,7 +131,7 @@ local hsIdx = GetMacroIndexByName("hs")
 local ok, why = M.One(hsIdx)
 expect("explicit migrate of off-bar macro succeeds", ok, true)
 expect("char tab now charge,hs", charTab(), "charge,hs")
-expect("second stub numbered", general(), "frost,hello,zz001,zz002")
+expect("second stub numbered", general(), "frost,hello,~~vms~001,~~vms~002")
 
 -------------------------------------------------------------------- One(): refuses wrong class / no class / stub
 ok, why = M.One(GetMacroIndexByName("frost"))
@@ -131,7 +140,7 @@ expect("reason names the class", why, "belongs to MAGE, not WARRIOR")
 ok, why = M.One(GetMacroIndexByName("hello"))
 expect("refuses no-class-spell macro", ok, false)
 expect("reason", why, "no class spell")
-ok, why = M.One(GetMacroIndexByName("zz001"))
+ok, why = M.One(GetMacroIndexByName("~~vms~001"))
 expect("refuses stub", ok, false)
 expect("reason stub", why, "already migrated")
 
@@ -161,7 +170,7 @@ W.slots = {}
 -- Sync gives B the class macros (same bodies). Different NAME for charge on B to prove hash wins.
 table.insert(W.char, { name = "Charge!", icon = 1, body = CHARGE })
 table.insert(W.char, { name = "hs", icon = 1, body = "/cast Heroic Strike" })
-W.slots[1] = "zz001"; W.slots[7] = "zz001"; W.slots[8] = "zz002"
+W.slots[1] = "~~vms~001"; W.slots[7] = "~~vms~001"; W.slots[8] = "~~vms~002"
 W.slots[9] = "frost"                                  -- not a stub, untouched
 local n, unresolved = M.Remap()
 expect("remap count", n, 3)
@@ -172,27 +181,22 @@ expect("non-stub slot untouched", W.slots[9], "frost")
 expect("no unresolved", #unresolved, 0)
 expect("remap idempotent", (M.Remap()), 0)
 
--------------------------------------------------------------------- M5: stub of ANOTHER class on this bar is ignored
-addGeneral("zz003", M.StubBody("MAGE", NS.MacroKey("/cast Frostbolt"), "frost"))
-W.slots[10] = "zz003"
-expect("foreign-class stub ignored", (M.Remap()), 0)
-expect("foreign stub still on bar", W.slots[10], "zz003")
+-------------------------------------------------------------------- M5: migrated macro of ANOTHER class on this bar is ignored
+addGeneral("~~vms~003", M.TaggedBody("/cast Frostbolt", "MAGE"))
+W.slots[10] = "~~vms~003"
+expect("foreign-class migrated macro ignored", (M.Remap()), 0)
+expect("foreign migrated macro still on bar", W.slots[10], "~~vms~003")
 
--------------------------------------------------------------------- M5: unresolved (class macro not synced here yet) warns, leaves stub
-addGeneral("zz004", M.StubBody("WARRIOR", "ffffffff", "ghost"))
-W.slots[11] = "zz004"
+-------------------------------------------------------------------- M5: unresolved (class macro not synced here yet) warns, leaves it
+addGeneral("~~vms~004", M.TaggedBody("/cast Ghost Strike", "WARRIOR"))
+W.slots[11] = "~~vms~004"
 W.printed = {}
 n, unresolved = M.Remap()
 expect("unresolved count", #unresolved, 1)
-expect("unresolved names original", unresolved[1], "ghost")
-expect("stub left on bar", W.slots[11], "zz004")
+expect("unresolved names the zz entry", unresolved[1], "~~vms~004")
+expect("migrated macro left on bar", W.slots[11], "~~vms~004")
 local warned = false
 for _, l in ipairs(W.printed) do if l:find("Could not find") then warned = true end end
 expect("warned", warned, true)
-
--------------------------------------------------------------------- M5: fallback by original NAME when hash misses (class set wiped)
-table.insert(W.char, { name = "ghost", icon = 1, body = "/cast Something Else" })
-n = M.Remap()
-expect("name fallback remaps", W.slots[11], "ghost")
 
 print("\nMIGRATE TESTS PASSED - DeleteMacro was never called")
