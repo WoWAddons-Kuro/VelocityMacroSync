@@ -183,6 +183,13 @@ function Migrate.One(generalIndex, opts)
 	local slots = SlotsHolding(name)
 	if opts.requireOnBars and #slots == 0 then return false, "not on this character's bars" end
 
+	-- GetMacroInfo gave us the DISPLAYED icon. For a "?" + #showtooltip macro
+	-- that is the current spell's picture, not the user's setting. Read the
+	-- icon the macro was actually saved with so the class copy and the
+	-- renamed general copy both carry the user's exact icon setup.
+	local storedIcon = Macros.StoredIcon(generalIndex)
+	if storedIcon ~= nil then icon = storedIcon end
+
 	local classIndex, classNameOrErr = FindOrCreateClassMacro(name, icon, body)
 	if not classIndex then return false, classNameOrErr end
 

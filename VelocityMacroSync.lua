@@ -50,6 +50,38 @@ init:SetScript("OnEvent", function(self, event, name)
 		end
 		NS.db.schema = 3
 	end
+	-- Schema 4: repair icons frozen by the displayed-icon bug. Builds before
+	-- 2026-11-22 copied GetMacroInfo's DISPLAYED icon into the class set, so
+	-- every "?" + #showtooltip macro was stored with whatever spell it showed
+	-- at migration time, and that static picture then synced everywhere.
+	-- Any body that drives its own icon (#showtooltip / #show) gets the "?"
+	-- back; bodies without those directives keep their icon, which really was
+	-- the user's choice. Per-character snapshots are cleared for those hashes
+	-- so the next merge sees "class icon differs from page" and pushes the
+	-- corrected "?" onto every page. Pages are only ever EditMacro'd (icon
+	-- field), never deleted.
+	if (NS.db.schema or 1) < 4 then
+		local function drivesOwnIcon(body)
+			for line in (body or ""):gmatch("[^\r\n]+") do
+				local cmd = line:match("^%s*#(%a+)")
+				if cmd and (cmd:lower() == "showtooltip" or cmd:lower() == "show") then return true end
+			end
+			return false
+		end
+		local repaired = {}
+		for _, set in pairs(NS.db.classes) do
+			for hash, e in pairs(set) do
+				if type(e) == "table" and drivesOwnIcon(e.body) then
+					e.icon = NS.Macros.QUESTION_MARK
+					repaired[hash] = true
+				end
+			end
+		end
+		for _, rec in pairs(NS.db.chars) do
+			if rec.snapshot then for hash in pairs(repaired) do rec.snapshot[hash] = nil end end
+		end
+		NS.db.schema = 4
+	end
 end)
 
 -- Wipes every byte of saved data, then immediately re-syncs so this

@@ -24,6 +24,9 @@
 --   localCreate = { entry, ... }                       CreateMacro on this page (entry.name may be suffixed)
 --   localEdit   = { {index=,name=,icon=,body=}, ... }  EditMacro in place (name/icon only, never body of a player macro)
 --   tombstone   = { hash, ... }                        player deleted these here since last sync
+--   untombstone = { hash, ... }                        player re-created a tombstoned body by hand; exclusion cleared
+--
+-- excluded[hash] is true (shown with Restore on the settings page) or "archived" (hidden there).
 local ADDON, NS = ...
 
 local Merge = {}
@@ -45,7 +48,7 @@ local function FreeName(name, taken)
 end
 
 function Merge.Plan(snapshot, excluded, localList, classSet)
-	local plan = { classAdd = {}, classAttr = {}, localCreate = {}, localEdit = {}, tombstone = {} }
+	local plan = { classAdd = {}, classAttr = {}, localCreate = {}, localEdit = {}, tombstone = {}, untombstone = {} }
 	local hadSnapshot = (snapshot ~= nil)
 	snapshot = snapshot or {}
 	excluded = excluded or {}
@@ -71,6 +74,13 @@ function Merge.Plan(snapshot, excluded, localList, classSet)
 
 	-- Pass 1: every macro on the page.
 	for hash, m in pairs(localByHash) do
+		-- The player re-created a body they had deleted (or archived) here.
+		-- That is an explicit "I want this back": clear the tombstone so it
+		-- syncs normally again. Works for both true and "archived".
+		if excluded[hash] then
+			plan.untombstone[#plan.untombstone + 1] = hash
+			excluded[hash] = nil
+		end
 		local c = classSet[hash]
 		if not c then
 			-- Body unknown to the class set: share it under the player's name.
@@ -114,5 +124,5 @@ function Merge.Plan(snapshot, excluded, localList, classSet)
 end
 
 function Merge.IsEmpty(plan)
-	return #plan.classAdd == 0 and #plan.classAttr == 0 and #plan.localCreate == 0 and #plan.localEdit == 0 and #plan.tombstone == 0
+	return #plan.classAdd == 0 and #plan.classAttr == 0 and #plan.localCreate == 0 and #plan.localEdit == 0 and #plan.tombstone == 0 and #plan.untombstone == 0
 end

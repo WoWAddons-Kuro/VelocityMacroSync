@@ -46,17 +46,52 @@ function Macros.FreeSlots()
 	return Client.MaxCharacterMacros() - (numChar or 0)
 end
 
+-- The user's "?" icon. MUST be the string name: CreateMacro with the numeric
+-- fileID 134400 produces a macro whose icon stays a static question mark and
+-- never follows #showtooltip (confirmed on WoWInterface, 2016 and 2020).
+Macros.QUESTION_MARK = "INV_MISC_QUESTIONMARK"
+Macros.QUESTION_MARK_FILEID = 134400
+
+-- Read the icon a macro was SAVED with, not the one it is currently drawing.
+--
+-- GetMacroInfo(i) returns the DISPLAYED icon. For a macro the user set to
+-- "?" with #showtooltip, that is whatever spell it resolves to right now -
+-- so copying it verbatim freezes the user's dynamic icon onto one picture.
+-- The Macro UI avoids this by reading the icon while the body is blank. We
+-- do the same: blank the body, read, restore. EditMacro's icon argument is
+-- optional and nil means "keep the stored icon", so the blanking write MUST
+-- pass nil - passing the displayed icon back in would store it and destroy
+-- the "?" permanently. Body goes back byte-for-byte. Caller gates combat.
+function Macros.StoredIcon(index)
+	local name, shownIcon, body = Client.GetMacroInfo(index)
+	if not name then return nil end
+	if body == nil or body == "" then return shownIcon end
+	Client.EditMacro(index, name, nil, "")
+	local _, storedIcon = Client.GetMacroInfo(index)
+	Client.EditMacro(index, name, nil, body)
+	return storedIcon
+end
+
+-- Normalise an icon for CreateMacro/EditMacro so a "?" keeps its dynamic
+-- behaviour: the numeric fileID becomes the string name. Anything else is
+-- the user's own choice and passes through untouched.
+function Macros.IconForWrite(icon)
+	if icon == nil or icon == Macros.QUESTION_MARK_FILEID then return Macros.QUESTION_MARK end
+	if type(icon) == "string" and icon:upper():find("INV_MISC_QUESTIONMARK", 1, true) then return Macros.QUESTION_MARK end
+	return icon
+end
+
 -- Icon argument differs by client generation: Classic Era wants a texture
 -- path/name, Forever (Mainline code) accepts a fileID or path. GetMacroInfo
 -- hands back whatever the client uses, so round-tripping it is safe.
 function Macros.Create(name, icon, body)
-	local ok, idx = pcall(Client.CreateMacro, name, icon or 134400, body, true) -- 134400 = INV_Misc_QuestionMark
+	local ok, idx = pcall(Client.CreateMacro, name, Macros.IconForWrite(icon), body, true)
 	if not ok then NS.Warn("CreateMacro failed for " .. name .. ": " .. tostring(idx)) return nil end
 	return idx
 end
 
 function Macros.Edit(index, name, icon, body)
-	local ok, err = pcall(Client.EditMacro, index, name, icon, body)
+	local ok, err = pcall(Client.EditMacro, index, name, Macros.IconForWrite(icon), body)
 	if not ok then NS.Warn("EditMacro failed for " .. name .. ": " .. tostring(err)) return false end
 	return true
 end

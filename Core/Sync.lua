@@ -146,10 +146,16 @@ function Sync.Run(reason)
 	if #plan.tombstone > 0 then
 		Say(string.format("%d macro%s you deleted here will stay off this character (other characters keep %s)", #plan.tombstone, plural(#plan.tombstone), #plan.tombstone == 1 and "it" or "them"))
 	end
+	if #plan.untombstone > 0 then
+		local names = {}
+		for _, h in ipairs(plan.untombstone) do local e = classSet[h]; names[#names + 1] = e and e.name or h end
+		Say(string.format("%d macro%s you re-created here %s back in sync: %s", #plan.untombstone, plural(#plan.untombstone),
+			#plan.untombstone == 1 and "is" or "are", table.concat(names, ", ")))
+	end
 	if #newOverflow > 0 then
 		NS.Warn(string.format("%d macro%s did not fit (%d character slots): %s", #newOverflow, plural(#newOverflow), Client.MaxCharacterMacros(), table.concat(newOverflow, ", ")))
 	end
-	return #created + #plan.localEdit + #plan.classAdd + #plan.tombstone
+	return #created + #plan.localEdit + #plan.classAdd + #plan.tombstone + #plan.untombstone
 end
 
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -213,19 +219,34 @@ function Sync.Status()
 		NS.SpellSets and NS.SpellSets.Known(class) or 0, class, tostring(Client.spellbookSource or "not read yet"), NS.db.autoMigrate and "on" or "off"))
 end
 
--- Tombstoned class macros for this character: entries in the class set that
--- this character has excluded (player deleted them here). Returns a list of
--- { hash=, name=, icon=, body= } so the settings page can offer Restore.
+-- Tombstoned class macros for this character that are NOT archived: entries
+-- in the class set the player deleted here and has not hidden. Returns a
+-- list of { hash=, name=, icon=, body= } so the settings page can offer
+-- Restore / Archive. Archived ones are deliberately left out: the only way
+-- back from archived is to re-create the macro by hand, which the merge
+-- detects by content hash and un-tombstones.
 function Sync.ExcludedHere()
 	local classSet = ClassSet()
 	local rec = CharRecord()
 	local out = {}
-	for hash in pairs(rec.excluded) do
+	for hash, state in pairs(rec.excluded) do
 		local e = classSet[hash]
-		if e then out[#out + 1] = { hash = hash, name = e.name, icon = e.icon, body = e.body } end
+		if e and state ~= "archived" then out[#out + 1] = { hash = hash, name = e.name, icon = e.icon, body = e.body } end
 	end
 	table.sort(out, function(a, b) return a.name:lower() < b.name:lower() end)
 	return out
+end
+
+-- Hide a tombstone from the settings page. The exclusion stays (the macro is
+-- still never recreated here); it just stops being listed. Nothing on the
+-- page changes. Reversible only by re-creating the macro by hand.
+function Sync.Archive(hash)
+	local rec = CharRecord()
+	if not rec.excluded[hash] then return false, "not excluded here" end
+	rec.excluded[hash] = "archived"
+	local e = ClassSet()[hash]
+	NS.Print(string.format("Archived \"%s\". It stays off this character and is no longer listed; re-create it by hand to bring it back.", e and e.name or hash))
+	return true
 end
 
 -- Undo a tombstone: forget the exclusion and let the next merge re-create the

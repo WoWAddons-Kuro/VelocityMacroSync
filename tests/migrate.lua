@@ -10,9 +10,20 @@ WOW_PROJECT_ID, WOW_PROJECT_CLASSIC = 2, 2
 function GetBuildInfo() return "1.15.9", "70576", "Oct 22 2026", 11509 end
 local function sortGeneral() table.sort(W.general, function(a, b) return a.name < b.name end) end
 function GetNumMacros() return #W.general, #W.char end
+-- Model the real client: a macro saved with the "?" icon whose body has
+-- #showtooltip REPORTS the resolved spell's icon from GetMacroInfo, not the
+-- stored "?". Blank the body and it reports the stored icon. That is the
+-- trap Macros.StoredIcon exists to step around.
+local QM = "INV_MISC_QUESTIONMARK"
+local function displayedIcon(m)
+	if (m.icon == QM or m.icon == 134400) and m.body ~= "" and m.body:match("#showtooltip") then
+		return 999001   -- "the spell's icon right now"
+	end
+	return m.icon
+end
 function GetMacroInfo(i)
 	local m = (i <= MAX_ACCT) and W.general[i] or W.char[i - MAX_ACCT]
-	if m then return m.name, m.icon, m.body end
+	if m then return m.name, displayedIcon(m), m.body end
 end
 function GetMacroIndexByName(name)
 	for i, m in ipairs(W.general) do if m.name == name then return i end end
@@ -27,6 +38,10 @@ end
 function EditMacro(i, name, icon, body)
 	local m = (i <= MAX_ACCT) and W.general[i] or W.char[i - MAX_ACCT]
 	assert(m, "EditMacro on empty index " .. i)
+	-- Real client: the icon you pass is what gets STORED. If the caller
+	-- round-trips a displayed spell icon back in, the "?" is lost for good.
+	-- Macros.StoredIcon must therefore never hand us the display value.
+	assert(icon ~= 999001, "EditMacro was given the DISPLAYED icon (999001); stored '?' would be destroyed")
 	m.name, m.icon, m.body = name, icon, body
 	if i <= MAX_ACCT then sortGeneral() end
 end
@@ -73,7 +88,7 @@ NS.db.classSpells.MAGE = { Frostbolt = true, Blink = true }
 
 -------------------------------------------------------------------- setup
 local CHARGE = "#showtooltip\n/targetenemy [noexists,nocombat][dead,nocombat]\n/cast [stance:1,nocombat] Charge; [stance:3,combat] Intercept; [combat] Berserker Stance; Battle Stance"
-addGeneral("charge", CHARGE)
+addGeneral("charge", CHARGE, QM)        -- user left it on "?" so #showtooltip drives the icon
 addGeneral("frost", "/cast Frostbolt")
 addGeneral("hello", "/say hello")
 addGeneral("hs", "/cast Heroic Strike")        -- warrior, but NOT on bars
@@ -119,7 +134,10 @@ expect("migrated general carries class tag", sp.class, "WARRIOR")
 expect("migrated general body hashes to the ORIGINAL", sp.hash, NS.MacroKey(CHARGE))
 expect("migrated general STILL WORKS: body intact minus tag", sp.body, CHARGE)
 expect("tag sits after #showtooltip", stub.body:match("^#showtooltip\n#:VMS:WARRIOR\n") ~= nil, true)
-expect("icon preserved, not replaced", stub.icon, 1)
+expect("renamed general keeps the user's '?' icon, not the displayed spell icon", stub.icon, QM)
+local classCharge
+for _, m in ipairs(W.char) do if m.body == CHARGE then classCharge = m end end
+expect("class copy ALSO has the user's '?' icon (dynamic #showtooltip preserved)", classCharge.icon, QM)
 expect("general count unchanged (nothing deleted)", #W.general, 4)
 
 -------------------------------------------------------------------- Auto again: idempotent
