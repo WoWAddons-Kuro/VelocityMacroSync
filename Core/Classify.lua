@@ -98,7 +98,7 @@ function Classify.Describe(v)
 	if v.class then return v.class end
 	if v.reason == "nosync" then return "#nosync" end
 	if v.reason == "noclassspell" then return "no class spell" end
-	if v.reason == "unknown" then return "unknown: " .. table.concat(v.names, ", ") end
+	if v.reason == "unknown" then return "uses: " .. table.concat(v.names, ", ") end
 	if v.reason == "mixed" then return "mixed: " .. table.concat(v.classes, ", ") end
 	return "?"
 end

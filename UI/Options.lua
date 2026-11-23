@@ -45,12 +45,14 @@ end
 -- ---------------------------------------------------------------------------
 -- Confirm-on-enable for auto migration
 -- ---------------------------------------------------------------------------
-local MIGRATE_WARNING = "WARNING: This will *move* your class-specific macros from General into per-character macros for each class. " ..
-	"Make sure you are happy with this addon before you turn this on, because characters referencing general macros " ..
-	"will only be updated if this addon is still running when you first login to them."
+-- Plain text for the popup; the on-page copy adds the orange WARNING: prefix.
+local MIGRATE_WARNING_BODY = "This will migrate your action bars to point at character specific macros, synced across classes. " ..
+	"If you stop using this addon, and want to go back to using General Macros to share across classes, " ..
+	"you will need to manually place them back on your action bars."
+local MIGRATE_WARNING = "WARNING: " .. MIGRATE_WARNING_BODY
 
 StaticPopupDialogs["VELOCITYMACROSYNC_ENABLE_MIGRATION"] = {
-	text = "Velocity Macro Sync\n\n" .. MIGRATE_WARNING .. "\n\nTurn on automatic migration?",
+	text = "Make sure you are happy with this addon\n\n" .. MIGRATE_WARNING_BODY .. "\n\nTurn on automatic migration?",
 	button1 = "Enable migration",
 	button2 = CANCEL,
 	OnAccept = function()
