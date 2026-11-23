@@ -213,6 +213,37 @@ function Sync.Status()
 		NS.SpellSets and NS.SpellSets.Known(class) or 0, class, tostring(Client.spellbookSource or "not read yet"), NS.db.autoMigrate and "on" or "off"))
 end
 
+-- Tombstoned class macros for this character: entries in the class set that
+-- this character has excluded (player deleted them here). Returns a list of
+-- { hash=, name=, icon=, body= } so the settings page can offer Restore.
+function Sync.ExcludedHere()
+	local classSet = ClassSet()
+	local rec = CharRecord()
+	local out = {}
+	for hash in pairs(rec.excluded) do
+		local e = classSet[hash]
+		if e then out[#out + 1] = { hash = hash, name = e.name, icon = e.icon, body = e.body } end
+	end
+	table.sort(out, function(a, b) return a.name:lower() < b.name:lower() end)
+	return out
+end
+
+-- Undo a tombstone: forget the exclusion and let the next merge re-create the
+-- macro on this page. Runs the merge immediately so the page updates now.
+function Sync.Restore(hash)
+	if InCombatLockdown() then NS.Warn("cannot change macros in combat") return false end
+	local rec = CharRecord()
+	if not rec.excluded[hash] then return false, "not excluded here" end
+	local classSet = ClassSet()
+	local e = classSet[hash]
+	if not e then return false, "no longer in the class set" end
+	if Macros.FreeSlots() <= 0 then return false, "character tab is full" end
+	rec.excluded[hash] = nil
+	Sync.Run("restore")
+	NS.Print(string.format("Restored \"%s\" to this character's macros.", e.name))
+	return true
+end
+
 -- Called after a full data wipe so the next sync behaves like a first login.
 function Sync.ForgetSession()
 	synced = false

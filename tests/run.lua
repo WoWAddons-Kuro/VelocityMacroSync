@@ -102,6 +102,20 @@ expect("A still has Fire", names():find("Fire=") ~= nil, true)
 expect("class set unchanged", NS.db.classes.WARRIOR[NS.MacroKey("/cast Fireball")] ~= nil, true)
 expect("B tombstoned", NS.db.chars.B.excluded[NS.MacroKey("/cast Fireball")], true)
 
+-------------------------------------------------------------------- 4b: tombstone is visible and restorable
+World.current = "B"
+local ex = NS.Sync.ExcludedHere()
+expect("B sees one excluded", #ex, 1)
+expect("excluded is Fire", ex[1].name, "Fire")
+expect("excluded carries body", ex[1].body, "/cast Fireball")
+local ok = NS.Sync.Restore(ex[1].hash)
+flushTimers()
+expect("restore ok", ok, true)
+expect("B has Fire again", names():find("Fire=/cast Fireball") ~= nil, true)
+expect("tombstone cleared", NS.db.chars.B.excluded[NS.MacroKey("/cast Fireball")], nil)
+expect("B sees none excluded now", #NS.Sync.ExcludedHere(), 0)
+expect("restore of non-excluded refuses", (NS.Sync.Restore("00000000")), false)
+
 -------------------------------------------------------------------- 5: THE BUG. rename on one char must propagate, never fork into Name~2
 World.current = "A"
 for i, m in ipairs(cur().macros) do if m.name == "Charge" then EditMacro(MAX_ACCT + i, "charge", m.icon, m.body) end end

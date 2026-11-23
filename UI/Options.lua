@@ -228,6 +228,43 @@ local function CreateOptions()
 				anchor, y = r, 0
 			end
 		end
+
+		-- Tombstoned on this character: in the class set, deliberately deleted
+		-- here by the player. Shown so it is never a mystery why a synced macro
+		-- is missing, with a Restore button to undo the tombstone.
+		local excluded = (NS.Sync and NS.Sync.ExcludedHere) and NS.Sync.ExcludedHere() or {}
+		if #excluded > 0 then
+			local d = classRows:Acquire()
+			d:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -6)
+			d.c1:SetPoint("TOPLEFT", 0, -6); d.c1:SetWidth(INNER_W)
+			d.c1:SetText(string.format("|cffaaaaaaDeleted on this character (%d) - other %s characters still have %s|r",
+				#excluded, ClassDisplayName(classFile), #excluded == 1 and "it" or "them"))
+			d.c1:Show()
+			d:SetHeight(d.c1:GetStringHeight() + 12)
+			anchor, y = d, 0
+			for _, e in ipairs(excluded) do
+				local r = classRows:Acquire()
+				r:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, y)
+				r.c1:SetPoint("TOPLEFT", 0, -3); r.c1:SetWidth(NAME_W); r.c1:SetText("|cff888888" .. e.name .. "|r"); r.c1:Show()
+				r.c2:SetPoint("TOPLEFT", NAME_W + 8, -3); r.c2:SetWidth(INNER_W - NAME_W - 8 - BTN_W - 8); r.c2:SetText("|cff888888" .. e.body .. "|r"); r.c2:Show()
+				r.btn:SetText("Restore"); r.btn:SetPoint("TOPRIGHT", 0, -1); r.btn:SetEnabled(true); r.btn:Show()
+				local hash = e.hash
+				r.btn:SetScript("OnClick", function()
+					local ok, why = NS.Sync.Restore(hash)
+					if not ok and why then NS.Warn("could not restore \"" .. e.name .. "\": " .. why) end
+					if NS.OptionsRefresh then NS.OptionsRefresh() end
+				end)
+				r.btn:SetScript("OnEnter", function(self)
+					GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+					GameTooltip:SetText("Put this macro back on this character's page. It stays synced with your other " .. ClassDisplayName(classFile) .. " characters.", 1, 1, 1, 1, true)
+					GameTooltip:Show()
+				end)
+				r.btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+				r.line:SetPoint("BOTTOMLEFT", 0, 0); r.line:SetPoint("BOTTOMRIGHT", 0, 0); r.line:Show()
+				r:SetHeight(math.max(r.c1:GetStringHeight(), r.c2:GetStringHeight(), 20) + 8)
+				anchor, y = r, 0
+			end
+		end
 		card:SetHeight(PAD + 14 + 6 + summary:GetStringHeight() + 8 + (anchor:GetTop() and (summary:GetBottom() - anchor:GetBottom()) or 20) + PAD)
 	end
 
