@@ -2,7 +2,7 @@
 ## Title: Velocity Macro Sync
 ## Notes: Keeps the "Character Specific Macros" tab identical across every character of the same class. Three-way merge at login: adds, edits and deletes all propagate.
 ## Author: Kuro
-## Version: v2026.11.23.2316
+## Version: @project-version@
 ## SavedVariables: VelocityMacroSyncDB
 ## IconTexture: Interface\AddOns\VelocityMacroSync\Assets\VelocityMacroSync_Icon.tga
 ## X-Website: https://github.com/WoWAddons-Kuro/VelocityMacroSync
