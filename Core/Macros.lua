@@ -10,7 +10,8 @@ local Macros = {}
 NS.Macros = Macros
 
 -- Returns an ordered list of { index=, name=, icon=, body= } for every
--- character-specific macro currently on this character.
+-- character-specific macro currently on this character. Icons are
+-- canonicalised (NS.CanonIcon) so a "?" compares equal however the client spells it.
 function Macros.ReadCharacter()
 	local _, numChar = Client.GetNumMacros()
 	local base = Client.MaxAccountMacros()
@@ -19,7 +20,7 @@ function Macros.ReadCharacter()
 		local index = base + i
 		local name, icon, body = Client.GetMacroInfo(index)
 		if name then
-			list[#list + 1] = { index = index, name = name, icon = icon, body = body or "" }
+			list[#list + 1] = { index = index, name = name, icon = NS.CanonIcon(icon), body = body or "" }
 		end
 	end
 	return list
@@ -49,8 +50,8 @@ end
 -- The user's "?" icon. MUST be the string name: CreateMacro with the numeric
 -- fileID 134400 produces a macro whose icon stays a static question mark and
 -- never follows #showtooltip (confirmed on WoWInterface, 2016 and 2020).
-Macros.QUESTION_MARK = "INV_MISC_QUESTIONMARK"
-Macros.QUESTION_MARK_FILEID = 134400
+Macros.QUESTION_MARK = NS.QUESTION_MARK
+Macros.QUESTION_MARK_FILEID = NS.QUESTION_MARK_FILEID
 
 -- Read the icon a macro was SAVED with, not the one it is currently drawing.
 --
@@ -74,11 +75,9 @@ end
 
 -- Normalise an icon for CreateMacro/EditMacro so a "?" keeps its dynamic
 -- behaviour: the numeric fileID becomes the string name. Anything else is
--- the user's own choice and passes through untouched.
+-- the user's own choice and passes through untouched. Same rule as NS.CanonIcon.
 function Macros.IconForWrite(icon)
-	if icon == nil or icon == Macros.QUESTION_MARK_FILEID then return Macros.QUESTION_MARK end
-	if type(icon) == "string" and icon:upper():find("INV_MISC_QUESTIONMARK", 1, true) then return Macros.QUESTION_MARK end
-	return icon
+	return NS.CanonIcon(icon)
 end
 
 -- Icon argument differs by client generation: Classic Era wants a texture

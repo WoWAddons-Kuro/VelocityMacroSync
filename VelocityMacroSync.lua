@@ -50,6 +50,19 @@ init:SetScript("OnEvent", function(self, event, name)
 		end
 		NS.db.schema = 3
 	end
+	-- Schema 4: canonical icons. Earlier builds stored whatever GetMacroInfo
+	-- returned (fileID 134400 on Forever) while writing the string name; the
+	-- two spellings of the same "?" made the merge non-idempotent (nagged
+	-- "Updated N macros" at every login). Scrub every stored icon once.
+	if (NS.db.schema or 1) < 4 then
+		for _, set in pairs(NS.db.classes) do
+			for _, e in pairs(set) do if type(e) == "table" then e.icon = NS.CanonIcon(e.icon) end end
+		end
+		for _, rec in pairs(NS.db.chars) do
+			for _, s in pairs(rec.snapshot or {}) do if type(s) == "table" then s.icon = NS.CanonIcon(s.icon) end end
+		end
+		NS.db.schema = 4
+	end
 end)
 
 -- Wipes every byte of saved data, then immediately re-syncs so this
@@ -58,7 +71,7 @@ end)
 function NS.WipeAllData()
 	for k in pairs(NS.db) do NS.db[k] = nil end
 	for k, v in pairs(DB_DEFAULTS) do NS.db[k] = type(v) == "table" and {} or v end
-	NS.db.schema = 3
+	NS.db.schema = 4
 	if NS.Sync.ForgetSession then NS.Sync.ForgetSession() end
 	NS.Print("all saved data wiped. No macros were touched on any character; other characters re-share at their next login.")
 	NS.Sync.Run("login")
@@ -97,10 +110,16 @@ SlashCmdList.VELOCITYMACROSYNC = function(msg)
 	elseif cmd == "list" then
 		local class = NS.Client.PlayerClass()
 		local set = NS.db.classes[class] or {}
-		local names = {}
-		for _, e in pairs(set) do names[#names + 1] = e.name end
-		table.sort(names)
-		NS.Print(class .. " class set (" .. #names .. "): " .. (#names > 0 and table.concat(names, ", ") or "empty"))
+		local entries = {}
+		for _, e in pairs(set) do entries[#entries + 1] = e end
+		table.sort(entries, function(a, b) return (a.seq or 0) < (b.seq or 0) end)
+		NS.Print(class .. " class set (" .. #entries .. "):")
+		for _, e in ipairs(entries) do
+			local who = e.by and (" by " .. e.by) or ""
+			local when = e.mtime and (" " .. date("%Y-%m-%d %H:%M", e.mtime)) or ""
+			NS.Print(string.format("  #%d %s%s%s", e.seq or 0, e.name, who, when))
+		end
+		if #entries == 0 then NS.Print("  empty") end
 	elseif cmd == "resetchar" then
 		NS.Sync.ResetCharacter()
 	elseif cmd == "resetclass" then

@@ -25,6 +25,8 @@ local function playerDelete(name)
 end
 function UnitGUID() return cur().guid end
 function UnitName() return cur().name end
+function UnitNameUnmodified() return cur().name end
+time, date = os.time, os.date
 function UnitClass() return "Warrior", cur().class end
 function InCombatLockdown() return false end
 -- Fake spellbook: tab 1 = General (skipped), tab 2 = class spells for the current char.
@@ -235,5 +237,44 @@ login("C"); World.printed = {}; login("C")
 local onlyOverflow = true
 for _, l in ipairs(World.printed) do if not l:find("did not fit") then onlyOverflow = false end end
 expect("idempotent: silent", #World.printed, 0)
+
+-------------------------------------------------------------------- 8: THE NAG. "?" icon spelled 134400 by GetMacroInfo (Forever) vs INV_MISC_QUESTIONMARK in the class set
+-- Reproduces the live SavedVariables: class entry (old build) holds the string,
+-- page+snapshot hold the fileID. Must plan NOTHING, and must stay silent on relogin.
+addChar("DR1", "Druid1", { { name = "claw", icon = 134400, body = "#showtooltip\n/cast Claw\n/startattack\n" } })
+World.chars.DR1.class = "DRUID"
+NS.db.classes.DRUID = { [NS.MacroKey("#showtooltip\n/cast Claw\n/startattack\n")] = { name = "claw", icon = "INV_MISC_QUESTIONMARK", body = "#showtooltip\n/cast Claw\n/startattack\n", seq = 5 } }
+NS.db.chars.DR1 = { class = "DRUID", excluded = {}, snapshot = { [NS.MacroKey("#showtooltip\n/cast Claw\n/startattack\n")] = { name = "claw", icon = 134400 } } }
+World.printed = {}
+login("DR1")
+expect("icon spelling: no 'Updated' nag", (function() for _, l in ipairs(World.printed) do if l:find("Updated") then return l end end return nil end)(), nil)
+expect("icon spelling: page icon untouched", cur().macros[1].icon, 134400)
+World.printed = {}; login("DR1")
+expect("icon spelling: second login silent", #World.printed, 0)
+expect("snapshot now carries class seq", NS.db.chars.DR1.snapshot[NS.MacroKey("#showtooltip\n/cast Claw\n/startattack\n")].seq, 5)
+
+-------------------------------------------------------------------- 9: idempotence guard: same seq => never a localEdit even if an encoding quirk slips through
+-- Simulate GetMacroInfo returning yet another spelling (lowercase path) that the page keeps echoing back.
+local clawHash = NS.MacroKey("#showtooltip\n/cast Claw\n/startattack\n")
+cur().macros[1].icon = "interface\\icons\\inv_misc_questionmark"
+NS.db.chars.DR1.snapshot[clawHash].icon = "interface\\icons\\inv_misc_questionmark"
+World.printed = {}; login("DR1")
+expect("guard: alt spelling silent", #World.printed, 0)
+
+-------------------------------------------------------------------- 10: provenance. A real attr change elsewhere bumps seq, follows, and names the editor
+addChar("DR2", "Druid2", {})
+World.chars.DR2.class = "DRUID"
+login("DR2")
+expect("DR2 received claw", names(), "claw=#showtooltip\n/cast Claw\n/startattack\n")
+EditMacro(MAX_ACCT + 1, "Claw!", 134400, cur().macros[1].body); edit()
+local e = NS.db.classes.DRUID[clawHash]
+expect("attr change bumped seq", e.seq > 5, true)
+expect("attr change stamped by", e.by, "Druid2")
+expect("attr change stamped mtime", type(e.mtime), "number")
+World.printed = {}; login("DR1")
+expect("DR1 followed rename", cur().macros[1].name, "Claw!")
+expect("message names the editor", (function() for _, l in ipairs(World.printed) do if l:find("edited on Druid2") then return true end end return false end)(), true)
+World.printed = {}; login("DR1")
+expect("provenance: relogin silent", #World.printed, 0)
 
 print("\nALL TESTS PASSED - DeleteMacro was never called")

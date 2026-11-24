@@ -30,20 +30,31 @@ SavedVariables are per account per install, so Era / Forever each keep their own
 ## Data model (`VelocityMacroSyncDB`)
 
 ```
-classes[CLASS]  = { [key] = { name, icon, body, seq } } -- the shared set, append-only; seq = insertion order
-chars[guid]     = { class, name, snapshot = { [key] = { name, icon } }, excluded = { [key] = true } }
-seq             = global counter stamped onto every class-set addition
-schema          = 2   (1 = old name\1body keys; migrated in place at ADDON_LOADED)
+classes[CLASS]  = { [key] = { name, icon, body, seq, by, mtime } } -- the shared set, append-only
+chars[guid]     = { class, name, snapshot = { [key] = { name, icon, seq } }, excluded = { [key] = true } }
+seq             = global counter; bumped on EVERY class-set write (add, body replace, AND name/icon change)
+schema          = 4   (1 = name\1body keys; 2 = body keys; 3 = content-hash keys; 4 = canonical icons)
 debug           = bool
-key             = body
+key             = FNV-1a hash of body
 ```
 
 - `chars` is keyed by `UnitGUID("player")` (workspace rule: never Name-Realm). `name` is display only.
-- `snapshot` = what THAT character's tab held (name + icon per body) after its last sync. `nil` = never synced.
+- `snapshot` = what THAT character's tab held (name + icon per body) after its last sync, plus the class
+  entry's `seq` it was reconciled against. `nil` = never synced. Retaken after every merge, even a no-op one.
 - `excluded` = tombstones for that character.
 - Name and icon are not part of the key: changing either is an edit of the same macro.
-- Because the set is append-only, an edit leaves the old body behind as a second entry with the same
-  name; the entry with the highest `seq` for a name is the current one.
+- `by` / `mtime` = display name of the character that last wrote the entry and `time()` when. **Display and
+  diagnostics only** — never used to decide who wins (client clocks are not trustworthy). `seq` is the only
+  ordering authority. Shown in chat ("Updated 3 macros edited on Kuro Bon on Nov 22, 03:14PM: …", or
+  "edited here" when the writer was this character) and in `/velocitymacrosync list`.
+- **Icons are canonical** (`NS.CanonIcon`): the "?" icon is stored and compared as the string
+  `INV_MISC_QUESTIONMARK` whether the client reported it as that, as the fileID `134400`, or as a texture path.
+  Writes must use the string (a numeric 134400 produces a static "?" that ignores `#showtooltip`), and Forever's
+  `GetMacroInfo` reports it back as 134400, so without canonicalisation the merge never converged (2026-11-23
+  bug: "Updated 3 macros edited on another character" at every login, nothing had changed anywhere).
+- **Idempotence guard**: if `snapshot[hash].seq == classSet[hash].seq` and the page is unchanged since the
+  snapshot, Merge never emits a `localEdit` for that macro. Any residual attribute difference is an encoding
+  quirk, not an edit, and is a one-time event at most rather than a per-login nag.
 
 ## Merge (`Core/Merge.lua`, pure, tested offline)
 

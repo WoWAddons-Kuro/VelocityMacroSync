@@ -17,10 +17,11 @@
 -- =======================================================================
 --
 -- Inputs
---   snapshot : { [hash] = { name=, icon= } }   what THIS page had after its last sync (nil = never synced)
+--   snapshot : { [hash] = { name=, icon=, seq= } } what THIS page had after its last sync (nil = never synced);
+--              seq = the class entry's seq at that time (idempotence guard, see pass 1)
 --   excluded : { [hash] = true }                tombstones for THIS character
 --   localList: { {index,name,icon,body}, ... }  what the page holds right now
---   classSet : { [hash] = {name,icon,body,seq} } the shared set
+--   classSet : { [hash] = {name,icon,body,seq,by,mtime} } the shared set; by/mtime = who last wrote it, when
 --
 -- Plan:
 --   classAdd    = { entry, ... }                       add to class set (hash of body)
@@ -110,7 +111,7 @@ function Merge.Plan(snapshot, excluded, localList, classSet, superseded)
 			local current = superseded[hash]
 			if current and classSet[current] then
 				local n = classSet[current]
-				plan.localEdit[#plan.localEdit + 1] = { index = m.index, name = n.name, icon = n.icon, body = n.body }
+				plan.localEdit[#plan.localEdit + 1] = { index = m.index, name = n.name, icon = n.icon, body = n.body, by = n.by, mtime = n.mtime }
 				resolvedByEdit[current] = true
 				excluded[hash] = nil
 			else
@@ -123,20 +124,30 @@ function Merge.Plan(snapshot, excluded, localList, classSet, superseded)
 				plan.classAdd[#plan.classAdd + 1] = { name = m.name, icon = m.icon, body = m.body }
 			end
 			end
-		elseif m.name ~= c.name or m.icon ~= c.icon then
+		elseif m.name ~= c.name or NS.CanonIcon(m.icon) ~= NS.CanonIcon(c.icon) then
 			-- Same body, different name/icon. Who changed it?
 			local s = snapshot[hash]
-			local oursChanged = (s ~= nil) and (s.name ~= m.name or s.icon ~= m.icon)
+			local oursChanged = (s ~= nil) and (s.name ~= m.name or NS.CanonIcon(s.icon) ~= NS.CanonIcon(m.icon))
+			-- IDEMPOTENCE GUARD. The snapshot records the class entry's seq it
+			-- was reconciled against. If the class entry has not moved since
+			-- (same seq) and the page has not moved since (ours unchanged),
+			-- then NOTHING new exists for this macro and there is nothing to
+			-- follow. Any residual difference is an encoding quirk (e.g. two
+			-- spellings of one icon), not an edit; without this guard such a
+			-- quirk became an "Updated N macros" nag at every single login.
+			local classUnchanged = (s ~= nil) and s.seq ~= nil and s.seq == c.seq
 			if oursChanged or not hadSnapshot then
 				-- Player renamed/re-iconed it here (or this is the first sync): the page is truth.
 				plan.classAttr[#plan.classAttr + 1] = { hash = hash, name = m.name, icon = m.icon }
+			elseif classUnchanged then
+				-- nothing to do (see guard above)
 			elseif not localNames[c.name] or localNames[c.name] == m then
 				-- Renamed elsewhere, and the new name is free here: follow it.
-				plan.localEdit[#plan.localEdit + 1] = { index = m.index, name = c.name, icon = c.icon, body = m.body }
+				plan.localEdit[#plan.localEdit + 1] = { index = m.index, name = c.name, icon = c.icon, body = m.body, by = c.by, mtime = c.mtime }
 			else
 				-- New name is taken here by a different body: keep our name, take the icon only.
-				if m.icon ~= c.icon then
-					plan.localEdit[#plan.localEdit + 1] = { index = m.index, name = m.name, icon = c.icon, body = m.body }
+				if NS.CanonIcon(m.icon) ~= NS.CanonIcon(c.icon) then
+					plan.localEdit[#plan.localEdit + 1] = { index = m.index, name = m.name, icon = c.icon, body = m.body, by = c.by, mtime = c.mtime }
 				end
 			end
 		end

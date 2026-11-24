@@ -43,6 +43,21 @@ end
 
 -- Deliberately no UniqueName / Name~2 helper: the addon never renames a macro to dodge a collision.
 
+-- Canonical icon. The user's "?" icon has TWO spellings depending on who you
+-- ask: GetMacroInfo on Forever returns the fileID 134400, while writes MUST
+-- use the string name (a numeric 134400 produces a static question mark that
+-- never follows #showtooltip). Everything that compares or stores an icon
+-- goes through here, so the two spellings are one value. Without this the
+-- merge saw 134400 (page) ~= "INV_MISC_QUESTIONMARK" (class set), "fixed"
+-- it with EditMacro, read back 134400, and nagged again at every login.
+NS.QUESTION_MARK = "INV_MISC_QUESTIONMARK"
+NS.QUESTION_MARK_FILEID = 134400
+function NS.CanonIcon(icon)
+	if icon == nil or icon == NS.QUESTION_MARK_FILEID then return NS.QUESTION_MARK end
+	if type(icon) == "string" and icon:upper():find(NS.QUESTION_MARK, 1, true) then return NS.QUESTION_MARK end
+	return icon
+end
+
 function NS.CountTable(t)
 	local n = 0
 	for _ in pairs(t) do n = n + 1 end

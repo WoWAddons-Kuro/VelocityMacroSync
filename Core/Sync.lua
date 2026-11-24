@@ -41,10 +41,23 @@ local function CharRecord()
 	return rec
 end
 
-local function TakeSnapshot(rec)
+-- Provenance on a class entry: who wrote it and when. DISPLAY / DIAGNOSTIC
+-- ONLY. mtime is never used to decide who wins (client clocks are not
+-- trustworthy); seq remains the ordering authority.
+local function Stamp(entry)
+	entry.by = Client.PlayerDisplayName()
+	entry.mtime = time()
+	return entry
+end
+
+-- Snapshot = what this page holds now, plus the class entry's seq each macro
+-- was reconciled against (Merge's idempotence guard). Icons canonical.
+local function TakeSnapshot(rec, classSet)
 	local snap = {}
 	for _, m in ipairs(Macros.ReadCharacter()) do
-		snap[NS.MacroKey(m.body)] = { name = m.name, icon = m.icon or false }
+		local hash = NS.MacroKey(m.body)
+		local c = classSet and classSet[hash]
+		snap[hash] = { name = m.name, icon = NS.CanonIcon(m.icon), seq = c and c.seq or nil }
 	end
 	rec.snapshot = snap
 end
@@ -61,7 +74,7 @@ local function Apply(plan, classSet, rec)
 	for _, e in ipairs(plan.classAdd) do
 		NS.Debug("class += " .. e.name)
 		NS.db.seq = (NS.db.seq or 0) + 1
-		classSet[NS.MacroKey(e.body)] = { name = e.name, icon = e.icon, body = e.body, seq = NS.db.seq }
+		classSet[NS.MacroKey(e.body)] = Stamp({ name = e.name, icon = NS.CanonIcon(e.icon), body = e.body, seq = NS.db.seq })
 	end
 	-- A body EDIT on a shared macro. This is the one place the class set is
 	-- not append-only: the old body is replaced by the new one, because they
@@ -77,7 +90,7 @@ local function Apply(plan, classSet, rec)
 		local newHash = NS.MacroKey(r.entry.body)
 		classSet[r.oldHash] = nil
 		NS.db.seq = (NS.db.seq or 0) + 1
-		classSet[newHash] = { name = r.entry.name, icon = r.entry.icon, body = r.entry.body, seq = NS.db.seq }
+		classSet[newHash] = Stamp({ name = r.entry.name, icon = NS.CanonIcon(r.entry.icon), body = r.entry.body, seq = NS.db.seq })
 		NS.db.superseded = NS.db.superseded or {}
 		-- Collapse chains: anything that pointed at the old hash now points at the new one.
 		for h, target in pairs(NS.db.superseded) do if target == r.oldHash then NS.db.superseded[h] = newHash end end
@@ -88,7 +101,13 @@ local function Apply(plan, classSet, rec)
 	end
 	for _, a in ipairs(plan.classAttr) do
 		local e = classSet[a.hash]
-		if e then NS.Debug("class attr " .. e.name .. " -> " .. a.name); e.name = a.name; e.icon = a.icon end
+		if e then
+			NS.Debug("class attr " .. e.name .. " -> " .. a.name)
+			e.name = a.name; e.icon = NS.CanonIcon(a.icon)
+			-- An attribute change IS a change: bump seq so siblings' snapshots go stale and they follow it.
+			NS.db.seq = (NS.db.seq or 0) + 1
+			e.seq = NS.db.seq; Stamp(e)
+		end
 	end
 	for _, e in ipairs(plan.localEdit) do
 		NS.Debug("page edit -> " .. e.name)
@@ -132,14 +151,15 @@ function Sync.Run(reason)
 	local plan = Merge.Plan(rec.snapshot, rec.excluded, localList, classSet, NS.db.superseded)
 
 	if Merge.IsEmpty(plan) then
-		if not rec.snapshot then TakeSnapshot(rec) end
+		-- Always retake: records the current class seq per macro (the idempotence guard needs it after upgrades too).
+		TakeSnapshot(rec, classSet)
 		NS.Debug("sync (" .. reason .. "): nothing to do")
 		synced = true
 		return 0
 	end
 
 	local created, overflow = Apply(plan, classSet, rec)
-	TakeSnapshot(rec)
+	TakeSnapshot(rec, classSet)
 	synced = true
 	-- Names that did not fit are reported once per session, not on every re-merge.
 	Sync.overflowReported = Sync.overflowReported or {}
@@ -161,7 +181,24 @@ function Sync.Run(reason)
 		end
 	end
 	if #plan.localEdit > 0 then
-		Say(string.format("Updated %d macro%s edited on another character: %s", #plan.localEdit, plural(#plan.localEdit), Names(plan.localEdit)))
+		-- Group by who wrote the class entry we are following, so the line is
+		-- honest about WHERE the edit came from (and when). "another
+		-- character" was wrong whenever the writer was this very character.
+		local me = Client.PlayerDisplayName()
+		local groups, order = {}, {}
+		for _, e in ipairs(plan.localEdit) do
+			local who = e.by or "another character"
+			if not groups[who] then groups[who] = { names = {}, mtime = 0 }; order[#order + 1] = who end
+			local g = groups[who]
+			g.names[#g.names + 1] = e.name
+			if (e.mtime or 0) > g.mtime then g.mtime = e.mtime end
+		end
+		for _, who in ipairs(order) do
+			local g = groups[who]
+			local when = g.mtime > 0 and (" on " .. date("%b %d, %I:%M%p", g.mtime)) or ""
+			local src = (who == me) and ("edited here" .. when) or ("edited on " .. who .. when)
+			Say(string.format("Updated %d macro%s %s: %s", #g.names, plural(#g.names), src, table.concat(g.names, ", ")))
+		end
 	end
 	if #plan.classAdd > 0 then
 		Say(string.format("Sharing %d new macro%s with your other %s characters: %s", #plan.classAdd, plural(#plan.classAdd), classLabel, Names(plan.classAdd)))
